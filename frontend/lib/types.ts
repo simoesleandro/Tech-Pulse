@@ -30,6 +30,18 @@ export interface NewsFilters {
 
 export type FeedView = "queue" | "read" | "saved";
 
+export interface PipelineStep {
+  id: string;
+  label: string;
+  estimated_seconds: number;
+  agent: string | null;
+}
+
+export interface PipelineConfig {
+  ingest: PipelineStep[];
+  backfill: PipelineStep[];
+}
+
 export interface IngestResult {
   fetched: number;
   skipped_duplicate: number;

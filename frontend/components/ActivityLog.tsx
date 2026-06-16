@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
+import { formatEta } from "@/lib/pipeline-steps";
+
 export type StepStatus = "pending" | "active" | "done" | "error";
 
 export interface ActivityStep {
@@ -7,6 +11,7 @@ export interface ActivityStep {
   label: string;
   status: StepStatus;
   detail?: string;
+  estimatedSeconds?: number;
 }
 
 interface ActivityLogProps {
@@ -14,6 +19,41 @@ interface ActivityLogProps {
   steps: ActivityStep[];
   visible: boolean;
   statusLine?: string | null;
+}
+
+function StepEta({
+  estimatedSeconds,
+  status,
+}: {
+  estimatedSeconds?: number;
+  status: StepStatus;
+}) {
+  const [remaining, setRemaining] = useState(estimatedSeconds ?? 0);
+
+  useEffect(() => {
+    if (status !== "active" || !estimatedSeconds) {
+      return;
+    }
+
+    setRemaining(estimatedSeconds);
+    const timer = setInterval(() => {
+      setRemaining((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [status, estimatedSeconds]);
+
+  if (status !== "active" || !estimatedSeconds) {
+    return null;
+  }
+
+  return (
+    <p className="mt-0.5 font-mono text-[10px] text-cyan/70">
+      {remaining > 0
+        ? `${formatEta(remaining)} restantes`
+        : `ETA ${formatEta(estimatedSeconds)} — aguardando resposta…`}
+    </p>
+  );
 }
 
 function StepIcon({ status }: { status: StepStatus }) {
@@ -73,7 +113,7 @@ export function ActivityLog({ title, steps, visible, statusLine }: ActivityLogPr
         <div className="mt-3 flex items-center gap-3">
           <span className="h-5 w-5 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" />
           <p className="text-sm text-foreground">
-            {statusLine || "Iniciando operação com o Gemma4…"}
+            {statusLine || "Iniciando pipeline multi-agente com Ollama…"}
           </p>
         </div>
       </div>
@@ -127,6 +167,10 @@ export function ActivityLog({ title, steps, visible, statusLine }: ActivityLogPr
               >
                 {step.label}
               </p>
+              <StepEta
+                estimatedSeconds={step.estimatedSeconds}
+                status={step.status}
+              />
               {step.detail ? (
                 <p className="mt-0.5 font-mono text-[10px] text-cyan/80">
                   {step.detail}
@@ -141,7 +185,7 @@ export function ActivityLog({ title, steps, visible, statusLine }: ActivityLogPr
 }
 
 export function buildSteps(
-  defs: Array<{ id: string; label: string }>,
+  defs: Array<{ id: string; label: string; estimatedSeconds?: number }>,
   activeIndex: number,
   doneUntil = activeIndex,
 ): ActivityStep[] {

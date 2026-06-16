@@ -9,6 +9,7 @@ import type {
   IngestResult,
   NewsFilters,
   NewsItem,
+  PipelineConfig,
   SeedResult,
   TopicFolder,
 } from "@/lib/types";
@@ -101,6 +102,12 @@ export async function patchBookmarkStatus(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_bookmarked }),
     timeoutMs: 15_000,
+  });
+}
+
+export async function fetchPipelineSteps(): Promise<PipelineConfig> {
+  return apiJson<PipelineConfig>("/api/pipeline/steps", {
+    timeoutMs: 10_000,
   });
 }
 

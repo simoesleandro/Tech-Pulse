@@ -23,9 +23,16 @@ from app.schemas import (
     NewsItemFolderUpdate,
     NewsItemReadUpdate,
     NewsItemResponse,
+    PipelineConfigResponse,
+    PipelineStepResponse,
     SeedResult,
     TopicFolderCreate,
     TopicFolderResponse,
+)
+from app.services.pipeline_config import (
+    BACKFILL_PIPELINE_STEPS,
+    INGEST_PIPELINE_STEPS,
+    steps_to_dict,
 )
 from app.services.hype_backfill import backfill_missing_hype
 from app.services.ingest import enrich_missing_items, run_ingest
@@ -130,6 +137,20 @@ def _news_to_response(item: NewsItem) -> NewsItemResponse:
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
     return HealthResponse(status="ok", service="techpulse-api")
+
+
+@app.get("/api/pipeline/steps", response_model=PipelineConfigResponse)
+def get_pipeline_steps():
+    return PipelineConfigResponse(
+        ingest=[
+            PipelineStepResponse(**step)
+            for step in steps_to_dict(INGEST_PIPELINE_STEPS)
+        ],
+        backfill=[
+            PipelineStepResponse(**step)
+            for step in steps_to_dict(BACKFILL_PIPELINE_STEPS)
+        ],
+    )
 
 
 @app.get("/api/news", response_model=list[NewsItemResponse])

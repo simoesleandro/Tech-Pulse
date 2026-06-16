@@ -54,6 +54,18 @@ class NewsItemBookmarkUpdate(BaseModel):
     is_bookmarked: bool
 
 
+class PipelineStepResponse(BaseModel):
+    id: str
+    label: str
+    estimated_seconds: int
+    agent: str | None = None
+
+
+class PipelineConfigResponse(BaseModel):
+    ingest: list[PipelineStepResponse]
+    backfill: list[PipelineStepResponse]
+
+
 class IngestResult(BaseModel):
     fetched: int
     skipped_duplicate: int

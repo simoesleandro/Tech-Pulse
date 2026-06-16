@@ -27,6 +27,17 @@ def test_health_check(client: TestClient):
     assert response.json() == {"status": "ok", "service": "techpulse-api"}
 
 
+def test_pipeline_steps_endpoint(client: TestClient):
+    response = client.get("/api/pipeline/steps")
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "ingest" in data
+    assert "backfill" in data
+    ingest_ids = [step["id"] for step in data["ingest"]]
+    assert ingest_ids == ["fetch", "dedup", "triador", "tradutor", "hype", "save"]
+    assert all(step["estimated_seconds"] > 0 for step in data["ingest"])
+
+
 def test_create_valid_news(client: TestClient):
     response = client.post("/api/news", json=VALID_PAYLOAD)
     assert response.status_code == 201, response.text

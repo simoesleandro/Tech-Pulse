@@ -11,44 +11,19 @@ import {
 } from "@/components/ActivityLog";
 import { checkApiHealth } from "@/lib/client-api";
 import { enrichBackfill, triggerIngest } from "@/lib/api";
+import {
+  BACKFILL_PIPELINE_STEPS,
+  formatEta,
+  INGEST_PIPELINE_STEPS,
+  totalEtaSeconds,
+  type PipelineStepDef,
+} from "@/lib/pipeline-steps";
 import type { EnrichBackfillResult, IngestResult } from "@/lib/types";
 
 type ActiveAction = "idle" | "ingest" | "backfill";
 
-const INGEST_STEP_DEFS = [
-  { id: "fetch", label: "Buscando artigos em dev.to, Reddit, Hacker News, GitHub e RSS…" },
-  { id: "dedup", label: "Filtrando duplicatas já existentes no feed…" },
-  {
-    id: "classify",
-    label: "Gemma4: classificando relevância (RELEVANTE ou LIXO)…",
-  },
-  {
-    id: "translate",
-    label: "Gemma4: traduzindo título e gerando descrição em PT-BR…",
-  },
-  {
-    id: "hype",
-    label: "Gemma4: avaliando hype da comunidade (0–5 estrelas)…",
-  },
-  { id: "save", label: "Salvando artigos no banco de dados…" },
-];
-
-const BACKFILL_STEP_DEFS = [
-  { id: "pick", label: "Selecionando próximo artigo pendente de tradução…" },
-  { id: "analyze", label: "Gemma4: analisando conteúdo e contexto da fonte…" },
-  {
-    id: "translate",
-    label: "Gemma4: traduzindo título e escrevendo resumo em português…",
-  },
-  {
-    id: "hype",
-    label: "Gemma4: calculando hype com base no engajamento da comunidade…",
-  },
-  { id: "save", label: "Persistindo artigo enriquecido no feed…" },
-];
-
 function advanceSteps(
-  defs: Array<{ id: string; label: string }>,
+  defs: PipelineStepDef[],
   index: number,
   detail?: string,
 ): ActivityStep[] {
@@ -68,7 +43,7 @@ export function IngestPanel() {
   const [backfillResult, setBackfillResult] = useState<EnrichBackfillResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
-  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     void checkApiHealth().then(setApiOnline);
@@ -76,25 +51,30 @@ export function IngestPanel() {
 
   function clearStepTimer() {
     if (stepTimerRef.current) {
-      clearInterval(stepTimerRef.current);
+      clearTimeout(stepTimerRef.current);
       stepTimerRef.current = null;
     }
   }
 
-  function startStepAnimation(
-    defs: Array<{ id: string; label: string }>,
-    intervalMs = 12_000,
-  ) {
+  function startStepAnimation(defs: PipelineStepDef[], startIndex = 0) {
     clearStepTimer();
-    let index = 0;
+    let index = startIndex;
     setSteps(advanceSteps(defs, index));
 
-    stepTimerRef.current = setInterval(() => {
-      if (index < defs.length - 1) {
-        index += 1;
-        setSteps(advanceSteps(defs, index));
-      }
-    }, intervalMs);
+    const scheduleNext = () => {
+      const current = defs[index];
+      const delayMs = Math.max((current?.estimatedSeconds ?? 8) * 1000, 2000);
+
+      stepTimerRef.current = setTimeout(() => {
+        if (index < defs.length - 1) {
+          index += 1;
+          setSteps(advanceSteps(defs, index));
+          scheduleNext();
+        }
+      }, delayMs);
+    };
+
+    scheduleNext();
   }
 
   async function handleIngest() {
@@ -108,9 +88,11 @@ export function IngestPanel() {
     setActiveAction("ingest");
     setIsBusy(true);
     setLogTitle("Atualizando feed com IA");
-    setStatusLine("Conectando às fontes e ao Ollama…");
-    setSteps(advanceSteps(INGEST_STEP_DEFS, 0));
-    startStepAnimation(INGEST_STEP_DEFS, 15_000);
+    setStatusLine(
+      `Pipeline multi-agente — ETA total aproximado ${formatEta(totalEtaSeconds(INGEST_PIPELINE_STEPS))} por artigo novo.`,
+    );
+    setSteps(advanceSteps(INGEST_PIPELINE_STEPS, 0));
+    startStepAnimation(INGEST_PIPELINE_STEPS);
 
     try {
       const online = await checkApiHealth();
@@ -125,7 +107,10 @@ export function IngestPanel() {
       clearStepTimer();
       setSteps(
         markAllDone(
-          INGEST_STEP_DEFS.map((def) => ({ ...def, status: "pending" as const })),
+          INGEST_PIPELINE_STEPS.map((def) => ({
+            ...def,
+            status: "pending" as const,
+          })),
           `${stats.saved} salvas · ${stats.relevante} relevantes · ${stats.skipped_duplicate} duplicadas ignoradas`,
         ),
       );
@@ -162,9 +147,9 @@ export function IngestPanel() {
     setIsBusy(true);
     setLogTitle("Traduzindo artigos pendentes");
     setStatusLine(
-      "Aguarde — o Gemma4 processa um artigo por vez (pode levar 2–4 min cada).",
+      `Aguarde — 3 agentes por artigo (Triador ~50s · Tradutor ~90s · Hype ~45s).`,
     );
-    setSteps(advanceSteps(BACKFILL_STEP_DEFS, 0, "Preparando primeiro artigo…"));
+    setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, 0, "Preparando primeiro artigo…"));
 
     try {
       const online = await checkApiHealth();
@@ -194,12 +179,20 @@ export function IngestPanel() {
 
         clearStepTimer();
         let stepIndex = 0;
-        setSteps(advanceSteps(BACKFILL_STEP_DEFS, stepIndex, pendingHint));
+        setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, stepIndex, pendingHint));
 
-        stepTimerRef.current = setInterval(() => {
-          stepIndex = Math.min(stepIndex + 1, BACKFILL_STEP_DEFS.length - 2);
-          setSteps(advanceSteps(BACKFILL_STEP_DEFS, stepIndex, pendingHint));
-        }, 8_000);
+        const advanceBackfillStep = () => {
+          const current = BACKFILL_PIPELINE_STEPS[stepIndex];
+          const delayMs = Math.max((current?.estimatedSeconds ?? 8) * 1000, 2000);
+          stepTimerRef.current = setTimeout(() => {
+            if (stepIndex < BACKFILL_PIPELINE_STEPS.length - 2) {
+              stepIndex += 1;
+              setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, stepIndex, pendingHint));
+              advanceBackfillStep();
+            }
+          }, delayMs);
+        };
+        advanceBackfillStep();
 
         const stats = await enrichBackfill(1);
         clearStepTimer();
@@ -217,7 +210,7 @@ export function IngestPanel() {
         if (stats.processed > 0) {
           setSteps(
             markAllDone(
-              BACKFILL_STEP_DEFS.map((def) => ({
+              BACKFILL_PIPELINE_STEPS.map((def) => ({
                 ...def,
                 status: "pending" as const,
               })),
@@ -303,7 +296,7 @@ export function IngestPanel() {
             Ingestão
           </p>
           <p className="mt-1 text-sm text-muted">
-            Busca fontes, traduz para PT-BR e o Gemma4 classifica relevância e hype (0–5).
+            Busca fontes, deduplica e executa 3 agentes (Triador → Tradutor → Hype).
           </p>
           {apiOnline === false ? (
             <p className="mt-2 text-xs text-crimson" role="alert">

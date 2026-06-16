@@ -9,7 +9,13 @@ from app.services.scrapers.http_utils import BROWSER_HEADERS, REQUEST_TIMEOUT
 logger = logging.getLogger(__name__)
 
 # Plug future feeds here, e.g. ("https://tldr.tech/rss", "tldr_tech")
-DEFAULT_RSS_FEEDS: tuple[tuple[str, str], ...] = ()
+DEFAULT_RSS_FEEDS = {
+    "tldr_tech": "https://tldr.tech/tech/rss",
+    "real_python": "https://realpython.com/atom.xml",
+    "pragmatic_engineer": "https://blog.pragmaticengineer.com/rss/",
+    "netflix_tech": "https://netflixtechblog.com/feed",
+    "pycoders": "https://pycoders.com/archive/latest.rss"
+}
 
 
 def _strip_tag(tag: str) -> str:

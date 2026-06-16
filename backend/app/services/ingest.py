@@ -13,7 +13,7 @@ from app.services.hype_backfill import (
     refresh_item_hype,
     resolve_hype_score,
 )
-from app.services.ollama import enrich_article
+from app.services.ai_agent import enrich_article_sync
 from app.services.scrapers import (
     fetch_devto,
     fetch_github_trends,
@@ -104,7 +104,7 @@ def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
 def run_ingest(
     db: Session,
     fetchers: list[Fetcher] | None = None,
-    enricher: Callable[[RawArticle], object] = enrich_article,
+    enricher: Callable[[RawArticle], object] = enrich_article_sync,
 ) -> dict:
     fetchers = fetchers or DEFAULT_FETCHERS
     existing_urls = _load_existing_urls(db)
@@ -186,7 +186,7 @@ def enrich_missing_items(db: Session, limit: int = 1) -> dict[str, int]:
                     ups=item.engagement_ups,
                 )
 
-            enriched = enrich_article(raw)
+            enriched = enrich_article_sync(raw)
             item.title = enriched.title_pt
             item.title_original = raw.title
             item.description = enriched.description_pt
