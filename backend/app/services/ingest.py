@@ -1,5 +1,7 @@
+import asyncio
 import functools
 import logging
+import threading
 from collections.abc import Callable
 
 from sqlalchemy import func, or_, select
@@ -7,7 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import NewsItem
-from app.services.ai_agent import enrich_article_sync
+from app.services.ai_agent import (
+    AgentProgressCallback,
+    enrich_article_sync,
+    enrich_articles_as_completed,
+)
 from app.services.hype_backfill import (
     apply_engagement_from_article,
     item_to_raw_article,
@@ -25,6 +31,25 @@ from app.services.scrapers import (
 from app.services.scrapers.base import EnrichedArticle, RawArticle
 
 logger = logging.getLogger(__name__)
+
+CancelCheck = Callable[[], bool]
+
+_ingest_cancel_flag = threading.local()
+
+
+def set_ingest_cancel_event(event: threading.Event | None) -> None:
+    _ingest_cancel_flag.event = event
+
+
+def _is_cancelled() -> bool:
+    event = getattr(_ingest_cancel_flag, "event", None)
+    return bool(event and event.is_set())
+
+
+def _raise_if_cancelled() -> None:
+    if _is_cancelled():
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+
 
 Fetcher = Callable[[], list[RawArticle]]
 
@@ -80,7 +105,7 @@ def _count_pending(db: Session) -> int:
     )
 
 
-def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
+def _persist_article(db: Session, article: RawArticle, enriched: EnrichedArticle) -> NewsItem:
     hype_score = resolve_hype_score(enriched.hype_score, article)
     db_item = NewsItem(
         title=enriched.title_pt,
@@ -90,6 +115,7 @@ def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
         source=article.source,
         ai_relevance=enriched.ai_relevance,
         hype_score=hype_score,
+        ai_reasoning=enriched.ai_reasoning,
         engagement_reactions=article.positive_reactions,
         engagement_comments=article.comments_count,
         engagement_stars=article.stars,
@@ -102,12 +128,11 @@ def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
     return db_item
 
 
-def _enrich_with_progress(
-    article: RawArticle,
+def _agent_progress_factory(
     on_progress: ProgressEmitter | None,
     article_index: int,
     article_total: int,
-) -> EnrichedArticle:
+) -> AgentProgressCallback:
     def on_agent_progress(step_id: str, status: str, detail: str | None = None) -> None:
         label = detail or f"artigo {article_index}/{article_total}"
         emit_step(
@@ -119,7 +144,115 @@ def _enrich_with_progress(
             article_total=article_total,
         )
 
-    return enrich_article_sync(article, on_agent_progress=on_agent_progress)
+    return on_agent_progress
+
+
+def _persist_enriched_result(
+    db: Session,
+    index: int,
+    article: RawArticle,
+    enriched: EnrichedArticle,
+    on_progress: ProgressEmitter | None,
+    total_pending: int,
+    existing_urls: set[str],
+    stats: dict,
+) -> None:
+    stats["classified"] += 1
+
+    emit_step(
+        on_progress,
+        "save",
+        "active",
+        f"salvando artigo {index}/{total_pending} no SQLite…",
+        article_index=index,
+        article_total=total_pending,
+    )
+    _persist_article(db, article, enriched)
+    emit_step(
+        on_progress,
+        "save",
+        "done",
+        f"artigo {index}/{total_pending} salvo · {enriched.title_pt[:60]}",
+        article_index=index,
+        article_total=total_pending,
+    )
+
+    existing_urls.add(article.url)
+    stats["saved"] += 1
+    if enriched.ai_relevance == "RELEVANTE":
+        stats["relevante"] += 1
+    else:
+        stats["lixo"] += 1
+
+
+async def _enrich_and_persist_streaming(
+    db: Session,
+    pending: list[RawArticle],
+    on_progress: ProgressEmitter | None,
+    total_pending: int,
+    existing_urls: set[str],
+    stats: dict,
+) -> None:
+    def factory(index: int, total: int) -> AgentProgressCallback:
+        return _agent_progress_factory(on_progress, index, total)
+
+    async for index, article, outcome in enrich_articles_as_completed(pending, factory):
+        _raise_if_cancelled()
+
+        if isinstance(outcome, Exception):
+            stats["errors"].append(f"{article.url}: {outcome}")
+            continue
+
+        try:
+            _persist_enriched_result(
+                db,
+                index,
+                article,
+                outcome,
+                on_progress,
+                total_pending,
+                existing_urls,
+                stats,
+            )
+        except IntegrityError:
+            db.rollback()
+            existing_urls.add(article.url)
+            stats["skipped_duplicate"] += 1
+        except Exception as exc:
+            db.rollback()
+            stats["errors"].append(f"{article.url}: {exc}")
+
+
+def _run_streaming_enrich(
+    db: Session,
+    pending: list[RawArticle],
+    on_progress: ProgressEmitter | None,
+    total_pending: int,
+    existing_urls: set[str],
+    stats: dict,
+) -> None:
+    asyncio.run(
+        _enrich_and_persist_streaming(
+            db,
+            pending,
+            on_progress,
+            total_pending,
+            existing_urls,
+            stats,
+        )
+    )
+
+
+def _enrich_with_progress(
+    article: RawArticle,
+    on_progress: ProgressEmitter | None,
+    article_index: int,
+    article_total: int,
+) -> EnrichedArticle:
+    return enrich_article_sync(
+        article,
+        on_agent_progress=_agent_progress_factory(on_progress, article_index, article_total),
+    )
 
 
 def run_ingest(
@@ -156,51 +289,39 @@ def run_ingest(
 
     total_pending = len(pending)
 
-    for index, article in enumerate(pending, start=1):
-        try:
-            if enricher is not None:
+    _raise_if_cancelled()
+
+    if enricher is not None:
+        for index, article in enumerate(pending, start=1):
+            _raise_if_cancelled()
+            try:
                 enriched = enricher(article)
-            else:
-                enriched = _enrich_with_progress(
+                _persist_enriched_result(
+                    db,
+                    index,
                     article,
+                    enriched,
                     on_progress,
-                    article_index=index,
-                    article_total=total_pending,
+                    total_pending,
+                    existing_urls,
+                    stats,
                 )
-
-            stats["classified"] += 1
-
-            emit_step(
-                on_progress,
-                "save",
-                "active",
-                f"salvando {index}/{total_pending}",
-                article_index=index,
-                article_total=total_pending,
-            )
-            _persist_article(db, article, enriched)
-            emit_step(
-                on_progress,
-                "save",
-                "done",
-                f"{index}/{total_pending} persistido",
-                article_index=index,
-                article_total=total_pending,
-            )
-
-            existing_urls.add(article.url)
-            stats["saved"] += 1
-            if enriched.ai_relevance == "RELEVANTE":
-                stats["relevante"] += 1
-            else:
-                stats["lixo"] += 1
-        except IntegrityError:
-            db.rollback()
-            existing_urls.add(article.url)
-            stats["skipped_duplicate"] += 1
-        except Exception as exc:
-            db.rollback()
-            stats["errors"].append(f"{article.url}: {exc}")
+            except IntegrityError:
+                db.rollback()
+                existing_urls.add(article.url)
+                stats["skipped_duplicate"] += 1
+            except Exception as exc:
+                db.rollback()
+                stats["errors"].append(f"{article.url}: {exc}")
+    else:
+        _run_streaming_enrich(
+            db,
+            pending,
+            on_progress,
+            total_pending,
+            existing_urls,
+            stats,
+        )
 
     return stats
 
@@ -266,6 +387,7 @@ def enrich_missing_items(
             item.title_original = raw.title
             item.description = enriched.description_pt
             item.ai_relevance = enriched.ai_relevance
+            item.ai_reasoning = enriched.ai_reasoning
             apply_engagement_from_article(item, raw)
             item.hype_score = resolve_hype_score(enriched.hype_score, raw)
             if item.hype_score == 0:

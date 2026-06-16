@@ -5,8 +5,9 @@ import { FolderPanel } from "@/components/FolderPanel";
 import { Header } from "@/components/Header";
 import { IngestPanel } from "@/components/IngestPanel";
 import { NewsFeed } from "@/components/NewsFeed";
-import { fetchFolders, fetchNews, getFeedItems } from "@/lib/api";
-import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
+import { ObsidianStatusBanner } from "@/components/ObsidianStatusBanner";
+import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
+import type { FeedView, TopicFolder } from "@/lib/types";
 
 function resolveView(raw?: string): FeedView {
   if (raw === "read" || raw === "saved") {
@@ -18,7 +19,7 @@ function resolveView(raw?: string): FeedView {
 function FilterBarFallback() {
   return (
     <div className="flex gap-2" aria-hidden="true">
-      {Array.from({ length: 3 }).map((_, index) => (
+      {Array.from({ length: 4 }).map((_, index) => (
         <div
           key={index}
           className="h-8 w-16 animate-pulse rounded-md border border-border bg-surface"
@@ -53,21 +54,32 @@ function FeedSkeleton() {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; folder?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    folder?: string;
+    page?: string;
+    source?: string;
+    hype?: string;
+    q?: string;
+  }>;
 }) {
   const params = await searchParams;
   const view = resolveView(params.view);
   const folderId = params.folder ? Number(params.folder) : undefined;
+  const page = params.page ? Math.max(1, Number(params.page)) : 1;
+  const source = params.source || undefined;
+  const hype = params.hype !== undefined && params.hype !== "" ? Number(params.hype) : undefined;
+  const q = params.q?.trim() || undefined;
 
   let unreadCount = 0;
-  let items: NewsItem[] = [];
+  let feedTotal = 0;
+  let items = [] as Awaited<ReturnType<typeof getFeedPage>>["items"];
   let folders: TopicFolder[] = [];
   let apiError: string | null = null;
   let foldersError: string | null = null;
 
   try {
-    const unreadItems = await fetchNews({ is_read: false, ai_relevance: "RELEVANTE" });
-    unreadCount = unreadItems.length;
+    unreadCount = await getUnreadCount();
   } catch {
     apiError =
       "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
@@ -75,7 +87,16 @@ export default async function Home({
 
   if (!apiError) {
     try {
-      items = await getFeedItems(view, folderId);
+      const feed = await getFeedPage({
+        view,
+        folderId,
+        page,
+        source,
+        hype,
+        q,
+      });
+      items = feed.items;
+      feedTotal = feed.total;
     } catch {
       apiError =
         "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
@@ -85,7 +106,8 @@ export default async function Home({
   try {
     folders = await fetchFolders();
   } catch {
-    foldersError = "Não foi possível carregar as pastas. Reinicie o backend com o código mais recente.";
+    foldersError =
+      "Não foi possível carregar as pastas. Reinicie o backend com o código mais recente.";
   }
 
   return (
@@ -123,10 +145,18 @@ export default async function Home({
               <FolderPanel folders={folders} />
             </Suspense>
 
+            <ObsidianStatusBanner />
+
             {apiError ? (
               <FeedSkeleton />
             ) : (
-              <NewsFeed initialItems={items} view={view} folders={folders} />
+              <NewsFeed
+                initialItems={items}
+                view={view}
+                folders={folders}
+                total={feedTotal}
+                page={page}
+              />
             )}
           </div>
         </div>

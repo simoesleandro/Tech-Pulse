@@ -11,6 +11,7 @@ class NewsItemBase(BaseModel):
     source: str
     ai_relevance: str
     hype_score: int = 0
+    ai_reasoning: str | None = None
 
 
 class NewsItemCreate(NewsItemBase):
@@ -27,6 +28,17 @@ class NewsItemResponse(NewsItemBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class NewsListResponse(BaseModel):
+    items: list[NewsItemResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class NewsCountResponse(BaseModel):
+    count: int
 
 
 class NewsItemFolderUpdate(BaseModel):
@@ -104,6 +116,25 @@ class BulkNewsDelete(BaseModel):
 
 class BulkNewsResult(BaseModel):
     affected: int
+
+
+class ObsidianExportRequest(BaseModel):
+    ids: list[int]
+
+
+class ObsidianExportResult(BaseModel):
+    exported: int
+    paths: list[str]
+    mode: str
+    errors: list[str] = []
+
+
+class ObsidianStatusResponse(BaseModel):
+    configured: bool
+    mode: str | None = None
+    folder: str
+    connected: bool | None = None
+    message: str | None = None
 
 
 class HealthResponse(BaseModel):

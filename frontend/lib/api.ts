@@ -1,5 +1,6 @@
 import { cache } from "react";
 
+import { PAGE_SIZE } from "@/lib/feed-filters";
 import { apiJson } from "@/lib/client-api";
 import type {
   BulkNewsResult,
@@ -9,6 +10,9 @@ import type {
   IngestResult,
   NewsFilters,
   NewsItem,
+  NewsListResponse,
+  ObsidianExportResult,
+  ObsidianStatus,
   PipelineConfig,
   SeedResult,
   TopicFolder,
@@ -28,28 +32,126 @@ function buildNewsUrl(filters?: NewsFilters): string {
   if (filters?.folder_id !== undefined) {
     params.set("folder_id", String(filters.folder_id));
   }
+  if (filters?.source) {
+    params.set("source", filters.source);
+  }
+  if (filters?.min_hype !== undefined) {
+    params.set("min_hype", String(filters.min_hype));
+  }
+  if (filters?.hype !== undefined) {
+    params.set("hype", String(filters.hype));
+  }
+  if (filters?.q) {
+    params.set("q", filters.q);
+  }
+  if (filters?.limit !== undefined) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters?.offset !== undefined) {
+    params.set("offset", String(filters.offset));
+  }
   const query = params.toString();
   return `/api/news${query ? `?${query}` : ""}`;
 }
 
-export async function fetchNews(filters?: NewsFilters): Promise<NewsItem[]> {
-  return apiJson<NewsItem[]>(buildNewsUrl(filters));
+function buildNewsCountUrl(filters?: Omit<NewsFilters, "limit" | "offset">): string {
+  const params = new URLSearchParams();
+  if (filters?.is_read !== undefined) {
+    params.set("is_read", String(filters.is_read));
+  }
+  if (filters?.is_bookmarked !== undefined) {
+    params.set("is_bookmarked", String(filters.is_bookmarked));
+  }
+  if (filters?.ai_relevance) {
+    params.set("ai_relevance", filters.ai_relevance);
+  }
+  if (filters?.folder_id !== undefined) {
+    params.set("folder_id", String(filters.folder_id));
+  }
+  if (filters?.source) {
+    params.set("source", filters.source);
+  }
+  if (filters?.min_hype !== undefined) {
+    params.set("min_hype", String(filters.min_hype));
+  }
+  if (filters?.hype !== undefined) {
+    params.set("hype", String(filters.hype));
+  }
+  if (filters?.q) {
+    params.set("q", filters.q);
+  }
+  const query = params.toString();
+  return `/api/news/count${query ? `?${query}` : ""}`;
 }
 
-export const getFeedItems = cache(async (view: FeedView, folderId?: number): Promise<NewsItem[]> => {
-  if (view === "read") {
-    return fetchNews({ is_read: true, ai_relevance: "RELEVANTE" });
-  }
+export async function fetchNews(filters?: NewsFilters): Promise<NewsListResponse> {
+  return apiJson<NewsListResponse>(buildNewsUrl(filters));
+}
 
-  if (view === "saved") {
-    const filters: NewsFilters = { is_bookmarked: true, ai_relevance: "RELEVANTE" };
+export async function fetchNewsCount(
+  filters?: Omit<NewsFilters, "limit" | "offset">,
+): Promise<number> {
+  const response = await apiJson<{ count: number }>(buildNewsCountUrl(filters));
+  return response.count;
+}
+
+export interface FeedQueryOptions {
+  view: FeedView;
+  folderId?: number;
+  page?: number;
+  source?: string;
+  hype?: number;
+  q?: string;
+}
+
+function viewToFilters(
+  view: FeedView,
+  folderId?: number,
+  extra?: Pick<FeedQueryOptions, "source" | "hype" | "q">,
+): Omit<NewsFilters, "limit" | "offset"> {
+  const filters: Omit<NewsFilters, "limit" | "offset"> = {
+    ai_relevance: "RELEVANTE",
+  };
+
+  if (view === "read") {
+    filters.is_read = true;
+  } else if (view === "saved") {
+    filters.is_bookmarked = true;
     if (folderId !== undefined) {
       filters.folder_id = folderId;
     }
-    return fetchNews(filters);
+  } else {
+    filters.is_read = false;
   }
 
-  return fetchNews({ is_read: false, ai_relevance: "RELEVANTE" });
+  if (extra?.source) {
+    filters.source = extra.source;
+  }
+  if (extra?.hype !== undefined) {
+    filters.hype = extra.hype;
+  }
+  if (extra?.q) {
+    filters.q = extra.q;
+  }
+
+  return filters;
+}
+
+export const getFeedPage = cache(
+  async (options: FeedQueryOptions): Promise<NewsListResponse> => {
+    const page = Math.max(1, options.page ?? 1);
+    const baseFilters = viewToFilters(options.view, options.folderId, options);
+
+    return fetchNews({
+      ...baseFilters,
+      limit: PAGE_SIZE,
+      offset: (page - 1) * PAGE_SIZE,
+    });
+  },
+);
+
+export const getUnreadCount = cache(async (): Promise<number> => {
+  return fetchNewsCount({ is_read: false, ai_relevance: "RELEVANTE" });
 });
 
 export async function fetchFolders(): Promise<TopicFolder[]> {
@@ -156,5 +258,20 @@ export async function bulkUpdateNews(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
     timeoutMs: 30_000,
+  });
+}
+
+export async function fetchObsidianStatus(): Promise<ObsidianStatus> {
+  return apiJson<ObsidianStatus>("/api/obsidian/status", {
+    timeoutMs: 10_000,
+  });
+}
+
+export async function exportNewsToObsidian(ids: number[]): Promise<ObsidianExportResult> {
+  return apiJson<ObsidianExportResult>("/api/obsidian/export", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+    timeoutMs: 60_000,
   });
 }

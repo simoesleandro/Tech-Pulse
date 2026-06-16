@@ -7,6 +7,7 @@ export interface NewsItem {
   source: string;
   ai_relevance: string;
   hype_score: number;
+  ai_reasoning: string | null;
   is_read: boolean;
   is_bookmarked: boolean;
   folder_id: number | null;
@@ -26,6 +27,19 @@ export interface NewsFilters {
   is_bookmarked?: boolean;
   ai_relevance?: string;
   folder_id?: number;
+  source?: string;
+  min_hype?: number;
+  hype?: number;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface NewsListResponse {
+  items: NewsItem[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export type FeedView = "queue" | "read" | "saved";
@@ -94,4 +108,19 @@ export interface BulkNewsUpdatePayload {
   is_bookmarked?: boolean;
   folder_id?: number | null;
   clear_folder?: boolean;
+}
+
+export interface ObsidianExportResult {
+  exported: number;
+  paths: string[];
+  mode: string;
+  errors: string[];
+}
+
+export interface ObsidianStatus {
+  configured: boolean;
+  mode: string | null;
+  folder: string;
+  connected: boolean | null;
+  message: string | null;
 }

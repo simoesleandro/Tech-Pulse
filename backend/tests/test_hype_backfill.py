@@ -15,6 +15,18 @@ def test_resolve_hype_prefers_computed_when_model_returns_zero():
     assert resolve_hype_score(0, article) >= 4
 
 
+def test_resolve_hype_blends_model_and_engagement():
+    article = RawArticle(
+        title="Mid impact post",
+        url="https://dev.to/example/mid",
+        source="dev.to",
+        positive_reactions=10,
+        comments_count=3,
+    )
+
+    assert resolve_hype_score(3, article) in {2, 3, 4}
+
+
 def test_devto_engagement_fetch_parses_counts():
     with patch("app.services.hype_backfill.requests.get") as mock_get:
         mock_get.return_value.status_code = 200

@@ -1,58 +1,67 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { EmptyState } from "@/components/EmptyState";
+import { FeedPagination } from "@/components/FeedPagination";
 import { NewsCard } from "@/components/NewsCard";
-import { bulkDeleteNews, bulkUpdateNews, deleteNewsItem } from "@/lib/api";
+import {
+  bulkDeleteNews,
+  bulkUpdateNews,
+  exportNewsToObsidian,
+} from "@/lib/api";
 import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
 
 interface NewsFeedProps {
   initialItems: NewsItem[];
   view: FeedView;
   folders: TopicFolder[];
+  total: number;
+  page: number;
 }
 
-export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
+export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedProps) {
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBusy, setIsBusy] = useState(false);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const itemIdsKey = initialItems.map((item) => item.id).join(",");
 
   useEffect(() => {
     setItems(initialItems);
-  }, [itemIdsKey]);
+  }, [itemIdsKey, initialItems]);
 
   useEffect(() => {
     setSelectedIds([]);
-  }, [view]);
-
-  const visibleItems = useMemo(() => {
-    if (view === "saved") {
-      return items.filter((item) => item.is_bookmarked);
-    }
-    if (view === "read") {
-      return items.filter((item) => item.is_read);
-    }
-    return items.filter((item) => !item.is_read);
-  }, [items, view]);
+    setActionMessage(null);
+  }, [view, page, itemIdsKey]);
 
   const selectedCount = useMemo(
-    () => visibleItems.filter((item) => selectedIds.includes(item.id)).length,
-    [visibleItems, selectedIds],
+    () => items.filter((item) => selectedIds.includes(item.id)).length,
+    [items, selectedIds],
   );
 
-  const allSelected =
-    visibleItems.length > 0 && selectedCount === visibleItems.length;
+  const allSelected = items.length > 0 && selectedCount === items.length;
+
+  function selectedItems(): NewsItem[] {
+    return items.filter((item) => selectedIds.includes(item.id));
+  }
 
   function handleUpdate(updated: NewsItem) {
     setItems((current) =>
       current.map((item) => (item.id === updated.id ? updated : item)),
     );
+    router.refresh();
+  }
+
+  function handleRemove(id: number) {
+    setItems((current) => current.filter((item) => item.id !== id));
+    setSelectedIds((current) => current.filter((itemId) => itemId !== id));
+    router.refresh();
   }
 
   function handleToggleSelect(id: number) {
@@ -63,31 +72,12 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
     );
   }
 
-  function handleSelectAll() {
-    setSelectedIds(visibleItems.map((item) => item.id));
-  }
-
-  function handleClearSelection() {
-    setSelectedIds([]);
-  }
-
-  function removeFromState(ids: number[]) {
-    const idSet = new Set(ids);
-    setItems((current) => current.filter((item) => !idSet.has(item.id)));
-    setSelectedIds((current) => current.filter((id) => !idSet.has(id)));
-  }
-
-  function selectedVisibleIds(): number[] {
-    return visibleItems
-      .filter((item) => selectedIds.includes(item.id))
-      .map((item) => item.id);
-  }
-
   async function runBulkAction(action: () => Promise<void>) {
     if (isBusy) {
       return;
     }
     setIsBusy(true);
+    setActionMessage(null);
     try {
       await action();
       router.refresh();
@@ -96,38 +86,26 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
     }
   }
 
-  function handleDeleteOne(id: number) {
-    if (!window.confirm("Excluir esta notícia do feed?")) {
-      return;
-    }
-
-    void runBulkAction(async () => {
-      await deleteNewsItem(id);
-      removeFromState([id]);
-    });
-  }
-
   function handleBulkDelete() {
-    const ids = selectedVisibleIds();
+    const ids = selectedItems().map((item) => item.id);
     if (ids.length === 0) {
       return;
     }
-    if (!window.confirm(`Excluir ${ids.length} notícia(s) selecionada(s)?`)) {
+    if (!window.confirm(`Excluir ${ids.length} notícia(s)?`)) {
       return;
     }
-
     void runBulkAction(async () => {
       await bulkDeleteNews(ids);
-      removeFromState(ids);
+      setItems((current) => current.filter((item) => !ids.includes(item.id)));
+      setSelectedIds([]);
     });
   }
 
   function handleBulkRead(isRead: boolean) {
-    const ids = selectedVisibleIds();
+    const ids = selectedItems().map((item) => item.id);
     if (ids.length === 0) {
       return;
     }
-
     void runBulkAction(async () => {
       await bulkUpdateNews({ ids, is_read: isRead });
       setItems((current) =>
@@ -139,11 +117,10 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
   }
 
   function handleBulkBookmark(isBookmarked: boolean) {
-    const ids = selectedVisibleIds();
+    const ids = selectedItems().map((item) => item.id);
     if (ids.length === 0) {
       return;
     }
-
     void runBulkAction(async () => {
       await bulkUpdateNews({ ids, is_bookmarked: isBookmarked });
       setItems((current) =>
@@ -162,13 +139,11 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
   }
 
   function handleBulkMoveToFolder(folderId: number) {
-    const ids = selectedVisibleIds();
+    const ids = selectedItems().map((item) => item.id);
     if (ids.length === 0) {
       return;
     }
-
     const folder = folders.find((entry) => entry.id === folderId);
-
     void runBulkAction(async () => {
       await bulkUpdateNews({ ids, folder_id: folderId });
       setItems((current) =>
@@ -187,11 +162,10 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
   }
 
   function handleBulkRemoveFromFolder() {
-    const ids = selectedVisibleIds();
+    const ids = selectedItems().map((item) => item.id);
     if (ids.length === 0) {
       return;
     }
-
     void runBulkAction(async () => {
       await bulkUpdateNews({ ids, clear_folder: true });
       setItems((current) =>
@@ -204,19 +178,55 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
     });
   }
 
-  if (visibleItems.length === 0) {
+  function handleBulkExportObsidian() {
+    const ids = selectedItems().map((item) => item.id);
+    if (ids.length === 0) {
+      return;
+    }
+    void runBulkAction(async () => {
+      const result = await exportNewsToObsidian(ids);
+      setActionMessage(`${result.exported} nota(s) enviada(s) ao Obsidian.`);
+    });
+  }
+
+  if (items.length === 0) {
     return <EmptyState view={view} />;
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 pb-24">
+      {actionMessage ? (
+        <p className="font-mono text-[10px] text-violet-300">{actionMessage}</p>
+      ) : null}
+
+      <ul className="flex flex-col gap-2" role="list">
+        {items.map((item) => (
+          <li key={item.id}>
+            <NewsCard
+              item={item}
+              view={view}
+              folders={folders}
+              onUpdate={handleUpdate}
+              onRemove={handleRemove}
+              selected={selectedIds.includes(item.id)}
+              onToggleSelect={handleToggleSelect}
+              selectionDisabled={isBusy}
+            />
+          </li>
+        ))}
+      </ul>
+
+      <Suspense fallback={null}>
+        <FeedPagination total={total} page={page} />
+      </Suspense>
+
       <BulkActionBar
         selectedCount={selectedCount}
-        totalCount={visibleItems.length}
+        totalCount={items.length}
         allSelected={allSelected}
         folders={folders}
-        onSelectAll={handleSelectAll}
-        onClearSelection={handleClearSelection}
+        onSelectAll={() => setSelectedIds(items.map((item) => item.id))}
+        onClearSelection={() => setSelectedIds([])}
         onMarkRead={() => handleBulkRead(true)}
         onMarkUnread={() => handleBulkRead(false)}
         onBookmark={() => handleBulkBookmark(true)}
@@ -224,25 +234,9 @@ export function NewsFeed({ initialItems, view, folders }: NewsFeedProps) {
         onMoveToFolder={handleBulkMoveToFolder}
         onRemoveFromFolder={handleBulkRemoveFromFolder}
         onDelete={handleBulkDelete}
+        onExportObsidian={handleBulkExportObsidian}
         disabled={isBusy}
       />
-
-      <ul className="flex flex-col gap-2" role="list">
-        {visibleItems.map((item) => (
-          <li key={item.id}>
-            <NewsCard
-              item={item}
-              view={view}
-              folders={folders}
-              onUpdate={handleUpdate}
-              selected={selectedIds.includes(item.id)}
-              onToggleSelect={handleToggleSelect}
-              onDelete={handleDeleteOne}
-              selectionDisabled={isBusy}
-            />
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

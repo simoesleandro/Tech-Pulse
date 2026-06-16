@@ -19,3 +19,4 @@ class EnrichedArticle:
     title_pt: str
     description_pt: str
     hype_score: int
+    ai_reasoning: str | None = None

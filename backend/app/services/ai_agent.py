@@ -3,8 +3,8 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
-from app.services.hype_backfill import resolve_hype_score
 from app.services.ollama_client import ollama_generate
 from app.services.scrapers.base import EnrichedArticle, RawArticle
 
@@ -43,7 +43,8 @@ Responda EXATAMENTE neste formato JSON (sem markdown):
 
 HYPE_SYSTEM = (
     "Você avalia o impacto técnico de notícias para desenvolvedores de 0 a 5 estrelas. "
-    "Considere a fonte e o engajamento da comunidade."
+    "Use TODA a escala: 0 = irrelevante, 1 = muito baixo, 2 = nicho, 3 = moderado, "
+    "4 = alto impacto, 5 = disruptivo. Evite polarizar só em 1 ou 5."
 )
 
 SOURCE_WEIGHT_HINTS = {
@@ -65,9 +66,18 @@ Sinais de engajamento:
 - Stars (GitHub): {stars}
 - Upvotes (Reddit/HN): {ups}
 
-Responda EXATAMENTE neste formato (uma linha):
-HYPE: número inteiro de 0 a 5
+Escala obrigatória (use valores intermediários quando couber):
+0 = sem impacto · 1 = muito baixo · 2 = nicho · 3 = moderado · 4 = alto · 5 = disruptivo
+
+Responda EXATAMENTE neste JSON (sem markdown):
+{{"hype": número inteiro de 0 a 5, "reasoning": "uma frase curta em português explicando a nota"}}
 """
+
+
+@dataclass(frozen=True)
+class HypeAssessment:
+    hype: int
+    reasoning: str
 
 
 def _parse_relevance(raw: str) -> str:
@@ -102,12 +112,28 @@ def _parse_tradutor_response(raw: str, article: RawArticle) -> tuple[str, str]:
     return title_pt, desc_pt
 
 
-def _parse_hype(raw: str, article: RawArticle) -> int:
+def _parse_hype_response(raw: str) -> HypeAssessment:
+    json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if json_match:
+        try:
+            data = json.loads(json_match.group(0))
+            hype = min(5, max(0, int(data.get("hype", 0))))
+            reasoning = str(data.get("reasoning", "")).strip()
+            if reasoning:
+                return HypeAssessment(hype=hype, reasoning=reasoning)
+            return HypeAssessment(
+                hype=hype,
+                reasoning="Impacto técnico avaliado pelo analista de hype.",
+            )
+        except (json.JSONDecodeError, ValueError, TypeError):
+            pass
+
     hype_match = re.search(r"HYPE:\s*(\d)", raw, re.IGNORECASE)
-    parsed = 0
-    if hype_match:
-        parsed = min(5, max(0, int(hype_match.group(1))))
-    return resolve_hype_score(parsed, article)
+    parsed = min(5, max(0, int(hype_match.group(1)))) if hype_match else 0
+    return HypeAssessment(
+        hype=parsed,
+        reasoning="Classificação legada sem justificativa detalhada.",
+    )
 
 
 async def agente_triador(article: RawArticle) -> str:
@@ -132,7 +158,7 @@ async def agente_tradutor(article: RawArticle) -> tuple[str, str]:
     return title_pt, desc_pt
 
 
-async def agente_hype(article: RawArticle, title_pt: str) -> int:
+async def agente_hype(article: RawArticle, title_pt: str) -> HypeAssessment:
     source_hint = SOURCE_WEIGHT_HINTS.get(article.source, "Avalie o impacto técnico geral.")
     prompt = HYPE_PROMPT.format(
         title_pt=title_pt,
@@ -144,9 +170,9 @@ async def agente_hype(article: RawArticle, title_pt: str) -> int:
         ups=article.ups,
     )
     raw = await ollama_generate(prompt, system=HYPE_SYSTEM)
-    hype = _parse_hype(raw, article)
-    logger.info("[hype] %s → %s estrelas", article.url, hype)
-    return hype
+    assessment = _parse_hype_response(raw)
+    logger.info("[hype] %s → %s estrelas — %s", article.url, assessment.hype, assessment.reasoning)
+    return assessment
 
 
 AgentProgressCallback = Callable[[str, str, str | None], None]
@@ -171,6 +197,7 @@ async def orquestrador_enriquecimento(
             title_pt=article.title,
             description_pt=article.description_snippet or "Conteúdo fora do escopo técnico.",
             hype_score=0,
+            ai_reasoning=None,
         )
 
     emit("tradutor", "active", article.title[:80])
@@ -178,15 +205,67 @@ async def orquestrador_enriquecimento(
     emit("tradutor", "done", title_pt[:80])
 
     emit("hype", "active", title_pt[:80])
-    hype_score = await agente_hype(article, title_pt)
-    emit("hype", "done", f"{hype_score} estrelas")
+    assessment = await agente_hype(article, title_pt)
+    emit("hype", "done", f"{assessment.hype} estrelas")
 
     return EnrichedArticle(
         ai_relevance="RELEVANTE",
         title_pt=title_pt,
         description_pt=desc_pt,
-        hype_score=hype_score,
+        hype_score=assessment.hype,
+        ai_reasoning=assessment.reasoning,
     )
+
+
+async def enrich_articles_parallel(
+    articles: list[RawArticle],
+    on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+) -> list[tuple[int, RawArticle, EnrichedArticle | Exception]]:
+    total = len(articles)
+
+    async def enrich_one(index: int, article: RawArticle) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
+        callback = (
+            on_agent_progress_factory(index, total)
+            if on_agent_progress_factory
+            else None
+        )
+        try:
+            enriched = await orquestrador_enriquecimento(article, callback)
+            return index, article, enriched
+        except Exception as exc:
+            return index, article, exc
+
+    results = await asyncio.gather(
+        *[enrich_one(index, article) for index, article in enumerate(articles, start=1)]
+    )
+    return list(results)
+
+
+async def enrich_articles_as_completed(
+    articles: list[RawArticle],
+    on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+):
+    total = len(articles)
+
+    async def enrich_one(index: int, article: RawArticle) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
+        callback = (
+            on_agent_progress_factory(index, total)
+            if on_agent_progress_factory
+            else None
+        )
+        try:
+            enriched = await orquestrador_enriquecimento(article, callback)
+            return index, article, enriched
+        except Exception as exc:
+            return index, article, exc
+
+    tasks = [
+        asyncio.create_task(enrich_one(index, article))
+        for index, article in enumerate(articles, start=1)
+    ]
+
+    for task in asyncio.as_completed(tasks):
+        yield await task
 
 
 def enrich_article_sync(

@@ -29,6 +29,7 @@ class NewsItem(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     ai_relevance: Mapped[str] = mapped_column(String, nullable=False)
     hype_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ai_reasoning: Mapped[str | None] = mapped_column(String, nullable=True)
     engagement_reactions: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     engagement_comments: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     engagement_stars: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -101,6 +102,8 @@ def migrate_sqlite_schema() -> None:
             )
         if "folder_id" not in columns:
             conn.execute(text("ALTER TABLE news_items ADD COLUMN folder_id INTEGER"))
+        if "ai_reasoning" not in columns:
+            conn.execute(text("ALTER TABLE news_items ADD COLUMN ai_reasoning TEXT"))
 
         conn.execute(
             text(

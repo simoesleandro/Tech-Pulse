@@ -4,4 +4,5 @@ sqlalchemy>=2.0
 pydantic>=2.0
 requests
 httpx
+python-dotenv
 pytest

@@ -12,6 +12,7 @@ DEMO_ARTICLES = [
         "source": "dev.to",
         "ai_relevance": "RELEVANTE",
         "hype_score": 4,
+        "ai_reasoning": "Orquestração de agentes é tema em alta na comunidade Python.",
         "is_enriched": True,
     },
     {
@@ -22,6 +23,7 @@ DEMO_ARTICLES = [
         "source": "dev.to",
         "ai_relevance": "RELEVANTE",
         "hype_score": 3,
+        "ai_reasoning": "Conteúdo sólido de banco de dados, impacto moderado no dia a dia.",
         "is_enriched": True,
     },
     {

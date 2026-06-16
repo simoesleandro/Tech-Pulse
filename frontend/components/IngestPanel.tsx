@@ -12,64 +12,81 @@ import { checkApiHealth } from "@/lib/client-api";
 import { fetchPipelineSteps } from "@/lib/api";
 import {
   applyPipelineStepEvent,
-  BACKFILL_PIPELINE_STEPS,
   formatEta,
   INGEST_PIPELINE_STEPS,
   mapApiSteps,
   totalEtaSeconds,
   type PipelineStepDef,
 } from "@/lib/pipeline-steps";
-import { streamEnrichBackfill, streamIngest } from "@/lib/pipeline-stream";
-import type {
-  EnrichBackfillResult,
-  IngestResult,
-  PipelineStepEvent,
-} from "@/lib/types";
-
-type ActiveAction = "idle" | "ingest" | "backfill";
+import { streamIngest } from "@/lib/pipeline-stream";
+import type { IngestResult, PipelineStepEvent } from "@/lib/types";
 
 export function IngestPanel() {
   const router = useRouter();
   const [isBusy, setIsBusy] = useState(false);
-  const [activeAction, setActiveAction] = useState<ActiveAction>("idle");
   const [steps, setSteps] = useState<ActivityStep[]>([]);
   const [logTitle, setLogTitle] = useState("");
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
-  const [backfillResult, setBackfillResult] = useState<EnrichBackfillResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [ingestDefs, setIngestDefs] = useState<PipelineStepDef[]>(INGEST_PIPELINE_STEPS);
-  const [backfillDefs, setBackfillDefs] = useState<PipelineStepDef[]>(
-    BACKFILL_PIPELINE_STEPS,
-  );
 
   useEffect(() => {
     void checkApiHealth().then(setApiOnline);
     void fetchPipelineSteps()
       .then((config) => {
         setIngestDefs(mapApiSteps(config.ingest));
-        setBackfillDefs(mapApiSteps(config.backfill));
       })
       .catch(() => {
         /* mantém fallback estático */
       });
   }, []);
 
-  function handlePipelineEvent(
-    defs: PipelineStepDef[],
-    event: PipelineStepEvent,
-  ) {
+  function handlePipelineEvent(event: PipelineStepEvent) {
     if (event.type !== "step") {
       return;
     }
 
-    setSteps(applyPipelineStepEvent(defs, event));
+    setSteps((prev) => {
+      const saveInProgress = prev.some(
+        (step) => step.id === "save" && step.status === "active",
+      );
+      if (
+        saveInProgress &&
+        event.step_id === "triador" &&
+        event.status === "active"
+      ) {
+        return prev;
+      }
+      return applyPipelineStepEvent(ingestDefs, event);
+    });
 
     if (event.article_index && event.article_total) {
-      setStatusLine(
-        `Artigo ${event.article_index}/${event.article_total} — acompanhe o agente ativo abaixo.`,
-      );
+      const prefix = `Artigo ${event.article_index}/${event.article_total}`;
+      if (event.step_id === "save") {
+        setStatusLine(
+          event.status === "active"
+            ? `${prefix} — salvando no banco de dados…`
+            : event.detail ?? `${prefix} — salvo.`,
+        );
+        return;
+      }
+
+      const agentLabel =
+        event.step_id === "triador"
+          ? "Triador"
+          : event.step_id === "tradutor"
+            ? "Tradutor"
+            : event.step_id === "hype"
+              ? "Analista"
+              : event.step_id;
+
+      if (event.status === "active") {
+        setStatusLine(`${prefix} — ${agentLabel} em andamento…`);
+      } else if (event.detail) {
+        setStatusLine(`${prefix} — ${event.detail}`);
+      }
     }
   }
 
@@ -80,8 +97,6 @@ export function IngestPanel() {
 
     setError(null);
     setIngestResult(null);
-    setBackfillResult(null);
-    setActiveAction("ingest");
     setIsBusy(true);
     setLogTitle("Atualizando feed com IA");
     setStatusLine(
@@ -104,20 +119,18 @@ export function IngestPanel() {
       }
 
       const stats = await streamIngest((event) => {
-        handlePipelineEvent(ingestDefs, event);
+        handlePipelineEvent(event);
       });
 
-      setSteps(
-        markAllDone(
-          ingestDefs.map((def) => ({ ...def, status: "pending" as const })),
-          `${stats.saved} salvas · ${stats.relevante} relevantes · ${stats.skipped_duplicate} duplicadas ignoradas`,
-        ),
-      );
-      setStatusLine("Ingestão concluída.");
       setIngestResult(stats);
+      setSteps((prev) => markAllDone(prev.length > 0 ? prev : ingestDefs.map((def) => ({ ...def, status: "pending" as const }))));
+      setStatusLine(
+        stats.saved > 0
+          ? `Concluído — ${stats.saved} artigos salvos no feed.`
+          : "Concluído — nenhum artigo novo para salvar.",
+      );
       router.refresh();
     } catch (err) {
-      setStatusLine(null);
       setSteps([
         {
           id: "error",
@@ -126,133 +139,12 @@ export function IngestPanel() {
           detail: err instanceof Error ? err.message : "Erro desconhecido.",
         },
       ]);
-      setError(err instanceof Error ? err.message : "Erro desconhecido na ingestão.");
-    } finally {
-      setIsBusy(false);
-      setActiveAction("idle");
-    }
-  }
-
-  async function handleBackfill() {
-    if (isBusy) {
-      return;
-    }
-
-    setError(null);
-    setIngestResult(null);
-    setBackfillResult(null);
-    setActiveAction("backfill");
-    setIsBusy(true);
-    setLogTitle("Traduzindo artigos pendentes");
-    setStatusLine(
-      "Aguarde — 3 agentes por artigo (Triador · Tradutor · Hype).",
-    );
-    setSteps(
-      backfillDefs.map((def, index) => ({
-        ...def,
-        status: index === 0 ? "active" : "pending",
-      })),
-    );
-
-    try {
-      const online = await checkApiHealth();
-      setApiOnline(online);
-      if (!online) {
-        throw new Error(
-          "Backend offline. Execute: cd backend && uvicorn app.main:app --reload",
-        );
-      }
-
-      let totalProcessed = 0;
-      let totalErrors = 0;
-      let remaining = 1;
-      let candidates = 0;
-      let rounds = 0;
-      const maxRounds = 25;
-
-      while (remaining > 0 && rounds < maxRounds) {
-        const stats = await streamEnrichBackfill(1, (event) => {
-          handlePipelineEvent(backfillDefs, event);
-        });
-
-        if (rounds === 0) {
-          candidates = stats.candidates;
-        }
-
-        totalProcessed += stats.processed;
-        totalErrors += stats.errors;
-        remaining = stats.remaining;
-        rounds += 1;
-
-        if (stats.processed > 0) {
-          setSteps(
-            markAllDone(
-              backfillDefs.map((def) => ({ ...def, status: "pending" as const })),
-              `Artigo ${totalProcessed} concluído · ${remaining} pendente(s)`,
-            ),
-          );
-        }
-
-        if (stats.processed === 0) {
-          if (stats.errors > 0) {
-            setStatusLine("Erro ao processar artigo. Verifique se o Ollama está ativo.");
-          }
-          break;
-        }
-      }
-
-      const finalResult: EnrichBackfillResult = {
-        processed: totalProcessed,
-        errors: totalErrors,
-        candidates,
-        remaining,
-      };
-
-      setBackfillResult(finalResult);
-
-      if (finalResult.candidates === 0 && finalResult.processed === 0) {
-        setSteps([
-          {
-            id: "done",
-            label: "Nenhum artigo pendente de tradução no momento.",
-            status: "done",
-          },
-        ]);
-        setStatusLine("Nada a traduzir.");
-      } else {
-        setSteps([
-          {
-            id: "complete",
-            label: "Tradução em lote finalizada.",
-            status: "done",
-            detail: `${finalResult.processed} traduzidos · ${finalResult.remaining} pendentes · ${finalResult.errors} erros`,
-          },
-        ]);
-        setStatusLine("Tradução finalizada.");
-      }
-
-      router.refresh();
-    } catch (err) {
-      setSteps([
-        {
-          id: "error",
-          label: "Falha na tradução.",
-          status: "error",
-          detail: err instanceof Error ? err.message : "Erro desconhecido.",
-        },
-      ]);
       setStatusLine(null);
-      setError(
-        err instanceof Error ? err.message : "Erro ao traduzir artigos pendentes.",
-      );
+      setError(err instanceof Error ? err.message : "Erro ao atualizar o feed.");
     } finally {
       setIsBusy(false);
-      setActiveAction("idle");
     }
   }
-
-  const isIngesting = isBusy && activeAction === "ingest";
-  const isBackfilling = isBusy && activeAction === "backfill";
 
   return (
     <div className="rounded-lg border border-border bg-surface-elevated p-4">
@@ -266,7 +158,7 @@ export function IngestPanel() {
           </p>
           {apiOnline === false ? (
             <p className="mt-2 text-xs text-crimson" role="alert">
-              Backend offline em localhost:8000 — inicie a API antes de usar os botões.
+              Backend offline em localhost:8000 — inicie a API antes de usar o botão.
             </p>
           ) : null}
         </div>
@@ -274,19 +166,11 @@ export function IngestPanel() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => void handleBackfill()}
-            disabled={isBusy}
-            className="btn-interactive rounded-md border border-border px-4 py-2 font-mono text-xs uppercase tracking-wide text-muted"
-          >
-            {isBackfilling ? "Traduzindo…" : "Traduzir pendentes"}
-          </button>
-          <button
-            type="button"
             onClick={() => void handleIngest()}
             disabled={isBusy}
             className="btn-interactive btn-primary rounded-md border border-cyan bg-cyan/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-cyan"
           >
-            {isIngesting ? "Processando…" : "Atualizar feed"}
+            {isBusy ? "Processando…" : "Atualizar feed"}
           </button>
         </div>
       </div>
@@ -298,9 +182,7 @@ export function IngestPanel() {
         >
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" />
           <p className="text-xs text-cyan">
-            {isBackfilling
-              ? "Tradução em andamento — progresso em tempo real abaixo."
-              : "Atualização do feed em andamento — progresso em tempo real abaixo."}
+            Atualização do feed em andamento — progresso em tempo real abaixo.
           </p>
         </div>
       ) : null}
@@ -325,14 +207,6 @@ export function IngestPanel() {
           {ingestResult.errors.length > 0
             ? ` · ${ingestResult.errors.length} erros`
             : null}
-        </p>
-      ) : null}
-
-      {backfillResult && !isBusy ? (
-        <p className="mt-3 font-mono text-xs text-muted">
-          {backfillResult.candidates === 0 && backfillResult.processed === 0
-            ? "Nenhum artigo pendente de tradução."
-            : `${backfillResult.processed} traduzidos · ${backfillResult.remaining} ainda pendentes · ${backfillResult.errors} erros`}
         </p>
       ) : null}
     </div>

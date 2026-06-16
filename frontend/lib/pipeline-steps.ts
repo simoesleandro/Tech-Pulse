@@ -114,8 +114,23 @@ export function applyPipelineStepEvent(
     return defs.map((def) => ({ ...def, status: "pending" as const }));
   }
 
+  const agentStepIds = new Set(["triador", "tradutor", "hype", "save"]);
+  const isNewArticleCycle =
+    event.step_id === "triador" && event.status === "active";
+
   return defs.map((def, index) => {
     let status: "pending" | "active" | "done" = "pending";
+
+    if (isNewArticleCycle && agentStepIds.has(def.id)) {
+      if (def.id === "triador") {
+        status = "active";
+      }
+      return {
+        ...def,
+        status,
+        detail: def.id === "triador" ? event.detail : undefined,
+      };
+    }
 
     if (event.status === "active") {
       if (index < activeIndex) {
@@ -123,10 +138,8 @@ export function applyPipelineStepEvent(
       } else if (index === activeIndex) {
         status = "active";
       }
-    } else {
-      if (index <= activeIndex) {
-        status = "done";
-      }
+    } else if (index <= activeIndex) {
+      status = "done";
     }
 
     return {

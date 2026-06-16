@@ -63,7 +63,11 @@ def apply_engagement_from_article(item: NewsItem, article: RawArticle) -> None:
 
 def resolve_hype_score(parsed_hype: int, article: RawArticle) -> int:
     computed = compute_hype_score(article)
-    return max(parsed_hype, computed)
+    if parsed_hype <= 0:
+        return computed
+    # Blend LLM score with engagement metrics — avoids max() collapsing to only 1 or 5.
+    blended = round(0.6 * parsed_hype + 0.4 * computed)
+    return min(5, max(0, blended))
 
 
 def _refresh_engagement_metrics(item: NewsItem) -> None:

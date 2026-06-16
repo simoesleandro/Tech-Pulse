@@ -66,7 +66,7 @@ def test_list_filtered_news(client: TestClient):
     )
     assert response.status_code == 200, response.text
 
-    items = response.json()
+    items = response.json()["items"]
     assert len(items) == 1
     assert items[0]["ai_relevance"] == "RELEVANTE"
     assert items[0]["is_read"] is False
@@ -82,7 +82,7 @@ def test_list_bookmarked_filter(client: TestClient):
         params={"is_bookmarked": True, "ai_relevance": "RELEVANTE"},
     )
     assert response.status_code == 200
-    items = response.json()
+    items = response.json()["items"]
     assert len(items) == 1
     assert items[0]["is_bookmarked"] is True
 
@@ -90,7 +90,7 @@ def test_list_bookmarked_filter(client: TestClient):
 def test_patch_read_and_bookmark(client: TestClient):
     client.post("/api/news", json=VALID_PAYLOAD)
     list_response = client.get("/api/news", params={"ai_relevance": "RELEVANTE"})
-    item_id = list_response.json()[0]["id"]
+    item_id = list_response.json()["items"][0]["id"]
 
     read_response = client.patch(f"/api/news/{item_id}/read", json={"is_read": True})
     assert read_response.status_code == 200, read_response.text
@@ -179,4 +179,59 @@ def test_folders_and_assign(client: TestClient):
         "/api/news",
         params={"folder_id": folder_id, "is_bookmarked": True},
     )
-    assert len(filtered.json()) == 1
+    assert len(filtered.json()["items"]) == 1
+
+
+def test_news_pagination_and_filters(client: TestClient):
+    for index in range(3):
+        client.post(
+            "/api/news",
+            json={
+                **VALID_PAYLOAD,
+                "url": f"https://example.com/page-{index}",
+                "title": f"Python tutorial {index}",
+                "hype_score": index + 1,
+                "source": "dev.to" if index % 2 == 0 else "reddit",
+            },
+        )
+
+    page_one = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "limit": 2, "offset": 0},
+    )
+    assert page_one.status_code == 200
+    body = page_one.json()
+    assert len(body["items"]) == 2
+    assert body["total"] == 3
+    assert body["limit"] == 2
+    assert body["offset"] == 0
+
+    filtered = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "hype": 2},
+    )
+    assert filtered.status_code == 200
+    filtered_items = filtered.json()["items"]
+    assert len(filtered_items) == 1
+    assert filtered_items[0]["hype_score"] == 2
+
+    by_source = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "source": "dev.to"},
+    )
+    assert by_source.status_code == 200
+    assert all(item["source"] == "dev.to" for item in by_source.json()["items"])
+
+    search = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "q": "python"},
+    )
+    assert search.status_code == 200
+    assert len(search.json()["items"]) == 3
+
+    count = client.get(
+        "/api/news/count",
+        params={"ai_relevance": "RELEVANTE", "is_read": False},
+    )
+    assert count.status_code == 200
+    assert count.json()["count"] >= 3
