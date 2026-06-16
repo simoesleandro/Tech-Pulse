@@ -161,6 +161,14 @@ curl -X POST http://127.0.0.1:8000/api/ingest
 
 Ou use o botão **Atualizar feed** no dashboard.
 
+### Load demo data (no Ollama required)
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/seed
+```
+
+Or click **Load demo data** in the dashboard.
+
 ---
 
 ## 🔐 Variáveis de Ambiente / Environment Variables
@@ -172,8 +180,9 @@ Ou use o botão **Atualizar feed** no dashboard.
 | `OLLAMA_TIMEOUT` | Timeout da inferência (segundos) | `60` |
 | `INGEST_ON_STARTUP` | Ingerir ao iniciar o backend | `false` |
 | `INGEST_BACKGROUND` | Loop de ingestão em background | `false` |
-| `INGEST_INTERVAL_SECONDS` | Intervalo do loop (segundos) | `300` |
-| `NEXT_PUBLIC_API_URL` | URL da API para o frontend | `http://localhost:8000` |
+| `INGEST_INTERVAL_SECONDS` | Background loop interval (seconds) | `300` |
+| `ALLOW_SEED` | Enable `POST /api/seed` demo endpoint | `true` |
+| `NEXT_PUBLIC_API_URL` | API URL for the frontend | `http://localhost:8000` |
 
 > Lista completa em / Full list in: [`.env.example`](.env.example)
 
@@ -220,26 +229,27 @@ Persistência → API REST → Dashboard Next.js
 cd backend
 .\.venv\Scripts\activate   # Windows
 
-# Testes da API REST
-python test_api.py
+# Run pytest suite
+pytest
 
-# Testes do pipeline de ingestão
-python test_ingest.py
+# With verbose output
+pytest -v
 ```
 
-> **8+ cenários** cobrindo criação, duplicata, filtros, PATCH de status e ingestão mockada.
+> **10+ scenarios** covering health check, CRUD, filters, bookmark, seed, ingest mocks.
 
 ---
 
 ## 🗺 Roadmap
 
-- [x] Core backend — SQLite + SQLAlchemy + modelo `NewsItem`
-- [x] API REST FastAPI com CORS
-- [x] Pipeline de ingestão + classificação Ollama
-- [x] Dashboard Next.js slate-dark
-- [ ] Screenshots no README (`docs/screenshot.png`)
-- [ ] Suite pytest formal
-- [ ] Deploy (Fly.io / Vercel + VPS)
+- [x] Core backend — SQLite + SQLAlchemy + `NewsItem` model
+- [x] REST API FastAPI with CORS
+- [x] Ingestion pipeline + Ollama classification
+- [x] Next.js slate-dark dashboard
+- [x] Pytest suite + GitHub Actions CI
+- [x] Demo seed endpoint (`POST /api/seed`)
+- [ ] Screenshots in README (`docs/screenshot.png`)
+- [ ] Production deploy (Fly.io / Vercel + VPS)
 
 ---
 

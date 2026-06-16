@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { memo, useTransition } from "react";
 
+import { HypeStars } from "@/components/HypeStars";
 import { patchBookmarkStatus, patchReadStatus } from "@/lib/api";
 import type { FeedView, NewsItem } from "@/lib/types";
 
@@ -30,6 +32,15 @@ function formatTimestamp(iso: string): string {
   }).format(date);
 }
 
+function formatUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname + parsed.pathname.slice(0, 48);
+  } catch {
+    return url;
+  }
+}
+
 function BookmarkIcon({ filled }: { filled: boolean }) {
   return (
     <svg
@@ -46,6 +57,7 @@ function BookmarkIcon({ filled }: { filled: boolean }) {
 }
 
 function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const isUnread = !item.is_read;
 
@@ -53,6 +65,7 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
     startTransition(async () => {
       const updated = await patchReadStatus(item.id, !item.is_read);
       onUpdate(updated);
+      router.refresh();
     });
   }
 
@@ -60,6 +73,7 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
     startTransition(async () => {
       const updated = await patchBookmarkStatus(item.id, !item.is_bookmarked);
       onUpdate(updated);
+      router.refresh();
     });
   }
 
@@ -76,9 +90,9 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
         />
       ) : null}
 
-      <div className="flex flex-col gap-3 px-4 py-3 pl-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 px-4 py-4 pl-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <span className="rounded border border-border bg-slate-dark px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted">
               {formatSource(item.source)}
             </span>
@@ -88,6 +102,7 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
             >
               {formatTimestamp(item.created_at)}
             </time>
+            <HypeStars score={item.hype_score} />
           </div>
 
           <h2 className="mt-2 text-sm font-medium leading-snug text-foreground sm:text-base">
@@ -100,6 +115,21 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
               {item.title}
             </a>
           </h2>
+
+          {item.description ? (
+            <p className="mt-2 text-sm leading-relaxed text-muted">
+              {item.description}
+            </p>
+          ) : null}
+
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-block font-mono text-[10px] text-cyan/80 hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan"
+          >
+            {formatUrl(item.url)} →
+          </a>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:pt-1">
@@ -110,7 +140,7 @@ function NewsCardComponent({ item, view, onUpdate }: NewsCardProps) {
               disabled={isPending}
               className="rounded border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted transition-colors hover:border-cyan/40 hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan disabled:opacity-50"
             >
-              {item.is_read ? "Não lida" : "Marcar lida"}
+              {item.is_read ? "Marcar não lida" : "Marcar lida"}
             </button>
           ) : null}
 

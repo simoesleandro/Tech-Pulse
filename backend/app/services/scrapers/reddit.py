@@ -6,7 +6,7 @@ REDDIT_API_URL = "https://www.reddit.com/r/{subreddit}/hot.json"
 DEFAULT_SUBREDDIT = "programming"
 DEFAULT_LIMIT = 10
 REQUEST_TIMEOUT = 15
-USER_AGENT = "TechPulse/1.0 (local dev feed aggregator)"
+USER_AGENT = "Mozilla/5.0 (compatible; TechPulseBot/1.0; +https://github.com/simoesleandro/Tech-Pulse)"
 
 
 def fetch_reddit(
@@ -29,5 +29,13 @@ def fetch_reddit(
         title = post.get("title", "").strip()
         url = post.get("url", "").strip()
         if title and url:
-            articles.append(RawArticle(title=title, url=url, source="reddit"))
+            articles.append(
+                RawArticle(
+                    title=title,
+                    url=url,
+                    source="reddit",
+                    description_snippet=post.get("selftext", "").strip()[:280],
+                    ups=int(post.get("ups", 0) or 0),
+                )
+            )
     return articles

@@ -1,6 +1,6 @@
 import { cache } from "react";
 
-import type { FeedView, IngestResult, NewsFilters, NewsItem } from "@/lib/types";
+import type { EnrichBackfillResult, FeedView, IngestResult, NewsFilters, NewsItem, SeedResult } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -8,6 +8,9 @@ function buildNewsUrl(filters?: NewsFilters): string {
   const params = new URLSearchParams();
   if (filters?.is_read !== undefined) {
     params.set("is_read", String(filters.is_read));
+  }
+  if (filters?.is_bookmarked !== undefined) {
+    params.set("is_bookmarked", String(filters.is_bookmarked));
   }
   if (filters?.ai_relevance) {
     params.set("ai_relevance", filters.ai_relevance);
@@ -33,17 +36,11 @@ export const getFeedItems = cache(async (view: FeedView): Promise<NewsItem[]> =>
     return fetchNews({ is_read: true, ai_relevance: "RELEVANTE" });
   }
 
-  const items = await fetchNews(
-    view === "queue"
-      ? { is_read: false, ai_relevance: "RELEVANTE" }
-      : { ai_relevance: "RELEVANTE" },
-  );
-
   if (view === "saved") {
-    return items.filter((item) => item.is_bookmarked);
+    return fetchNews({ is_bookmarked: true, ai_relevance: "RELEVANTE" });
   }
 
-  return items;
+  return fetchNews({ is_read: false, ai_relevance: "RELEVANTE" });
 });
 
 export async function patchReadStatus(
@@ -87,6 +84,30 @@ export async function triggerIngest(): Promise<IngestResult> {
 
   if (!response.ok) {
     throw new Error("A ingestão falhou. Verifique se o backend e o Ollama estão ativos.");
+  }
+
+  return response.json();
+}
+
+export async function seedDemoData(): Promise<SeedResult> {
+  const response = await fetch(`${API_BASE}/api/seed`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Não foi possível carregar os dados de demonstração.");
+  }
+
+  return response.json();
+}
+
+export async function enrichBackfill(): Promise<EnrichBackfillResult> {
+  const response = await fetch(`${API_BASE}/api/enrich-backfill`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("Não foi possível traduzir os artigos pendentes.");
   }
 
   return response.json();

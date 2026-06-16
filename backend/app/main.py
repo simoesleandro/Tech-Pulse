@@ -10,15 +10,19 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import Base, SessionLocal, engine, get_db
-from app.models import NewsItem
+from app.models import NewsItem, migrate_sqlite_schema
 from app.schemas import (
+    EnrichBackfillResult,
+    HealthResponse,
     IngestResult,
     NewsItemBookmarkUpdate,
     NewsItemCreate,
     NewsItemReadUpdate,
     NewsItemResponse,
+    SeedResult,
 )
-from app.services.ingest import run_ingest
+from app.services.ingest import enrich_missing_items, run_ingest
+from app.services.seed import seed_demo_articles
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +37,9 @@ async def _ingest_loop() -> None:
         db = SessionLocal()
         try:
             stats = run_ingest(db)
-            logger.info("Ingestão em background concluída: %s", stats)
+            logger.info("Background ingest finished: %s", stats)
         except Exception:
-            logger.exception("Falha na ingestão em background")
+            logger.exception("Background ingest failed")
         finally:
             db.close()
 
@@ -44,9 +48,9 @@ def _run_startup_ingest() -> None:
     db = SessionLocal()
     try:
         stats = run_ingest(db)
-        logger.info("Ingestão inicial concluída: %s", stats)
+        logger.info("Startup ingest finished: %s", stats)
     except Exception:
-        logger.exception("Falha na ingestão inicial")
+        logger.exception("Startup ingest failed")
     finally:
         db.close()
 
@@ -54,6 +58,7 @@ def _run_startup_ingest() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    migrate_sqlite_schema()
 
     if INGEST_ON_STARTUP:
         await asyncio.to_thread(_run_startup_ingest)
@@ -83,9 +88,15 @@ app.add_middleware(
 )
 
 
+@app.get("/api/health", response_model=HealthResponse)
+def health_check():
+    return HealthResponse(status="ok", service="techpulse-api")
+
+
 @app.get("/api/news", response_model=list[NewsItemResponse])
 def list_news(
     is_read: bool | None = Query(default=None),
+    is_bookmarked: bool | None = Query(default=None),
     ai_relevance: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
@@ -93,6 +104,8 @@ def list_news(
 
     if is_read is not None:
         query = query.where(NewsItem.is_read == is_read)
+    if is_bookmarked is not None:
+        query = query.where(NewsItem.is_bookmarked == is_bookmarked)
     if ai_relevance is not None:
         query = query.where(NewsItem.ai_relevance == ai_relevance)
 
@@ -102,7 +115,10 @@ def list_news(
 
 @app.post("/api/news", response_model=NewsItemResponse, status_code=201)
 def create_news(item: NewsItemCreate, db: Session = Depends(get_db)):
-    db_item = NewsItem(**item.model_dump())
+    payload = item.model_dump()
+    if not payload.get("title_original"):
+        payload["title_original"] = payload["title"]
+    db_item = NewsItem(**payload)
     db.add(db_item)
     try:
         db.commit()
@@ -148,3 +164,15 @@ def update_bookmark_status(
 @app.post("/api/ingest", response_model=IngestResult)
 def trigger_ingest(db: Session = Depends(get_db)):
     return run_ingest(db)
+
+
+@app.post("/api/seed", response_model=SeedResult)
+def seed_demo(db: Session = Depends(get_db)):
+    if os.getenv("ALLOW_SEED", "true").lower() != "true":
+        raise HTTPException(status_code=403, detail="Endpoint de seed desabilitado")
+    return seed_demo_articles(db)
+
+
+@app.post("/api/enrich-backfill", response_model=EnrichBackfillResult)
+def enrich_backfill(db: Session = Depends(get_db)):
+    return enrich_missing_items(db)

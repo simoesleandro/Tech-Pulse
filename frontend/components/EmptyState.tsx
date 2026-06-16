@@ -7,7 +7,7 @@ interface EmptyStateProps {
 const COPY: Record<FeedView, { title: string; body: string }> = {
   queue: {
     title: "Fila vazia",
-    body: "Nenhum artigo relevante aguardando leitura. Dispare uma ingestão para buscar novo sinal.",
+    body: "Nenhum artigo relevante aguardando leitura. Dispare uma ingestão ou carregue os dados de demonstração.",
   },
   read: {
     title: "Nada lido ainda",

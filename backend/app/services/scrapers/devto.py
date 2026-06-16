@@ -20,5 +20,14 @@ def fetch_devto(limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
         title = item.get("title", "").strip()
         url = item.get("url", "").strip()
         if title and url:
-            articles.append(RawArticle(title=title, url=url, source="dev.to"))
+            articles.append(
+                RawArticle(
+                    title=title,
+                    url=url,
+                    source="dev.to",
+                    description_snippet=item.get("description", "").strip(),
+                    positive_reactions=int(item.get("positive_reactions_count", 0) or 0),
+                    comments_count=int(item.get("comments_count", 0) or 0),
+                )
+            )
     return articles

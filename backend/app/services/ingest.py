@@ -1,3 +1,4 @@
+import functools
 import logging
 from collections.abc import Callable
 
@@ -6,13 +7,21 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import NewsItem
-from app.services.ollama import classify_title
+from app.services.hype import compute_hype_score
+from app.services.ollama import enrich_article
 from app.services.scrapers import fetch_devto, fetch_github_trends, fetch_reddit
 from app.services.scrapers.base import RawArticle
 
 logger = logging.getLogger(__name__)
 
 Fetcher = Callable[[], list[RawArticle]]
+
+
+def _fetcher_name(fetcher: Fetcher) -> str:
+    if isinstance(fetcher, functools.partial):
+        return getattr(fetcher.func, "__name__", "partial_fetcher")
+    return getattr(fetcher, "__name__", "fetcher")
+
 
 DEFAULT_FETCHERS: list[Fetcher] = [fetch_devto, fetch_reddit, fetch_github_trends]
 
@@ -26,21 +35,37 @@ def _fetch_all_articles(fetchers: list[Fetcher]) -> tuple[list[RawArticle], list
     errors: list[str] = []
 
     for fetcher in fetchers:
-        name = fetcher.__name__
+        name = _fetcher_name(fetcher)
         try:
             articles.extend(fetcher())
         except Exception as exc:
             message = f"{name}: {exc}"
-            logger.warning("Falha no scraper %s", message)
+            logger.warning("Scraper failed %s", message)
             errors.append(message)
 
     return articles, errors
 
 
+def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
+    db_item = NewsItem(
+        title=enriched.title_pt,
+        title_original=article.title,
+        description=enriched.description_pt,
+        url=article.url,
+        source=article.source,
+        ai_relevance=enriched.ai_relevance,
+        hype_score=compute_hype_score(article),
+    )
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
 def run_ingest(
     db: Session,
     fetchers: list[Fetcher] | None = None,
-    classifier: Callable[[str], str] = classify_title,
+    enricher: Callable[[RawArticle], object] = enrich_article,
 ) -> dict:
     fetchers = fetchers or DEFAULT_FETCHERS
     existing_urls = _load_existing_urls(db)
@@ -62,22 +87,13 @@ def run_ingest(
             continue
 
         try:
-            relevance = classifier(article.title)
+            enriched = enricher(article)
             stats["classified"] += 1
 
-            db_item = NewsItem(
-                title=article.title,
-                url=article.url,
-                source=article.source,
-                ai_relevance=relevance,
-            )
-            db.add(db_item)
-            db.commit()
-            db.refresh(db_item)
-
+            _persist_article(db, article, enriched)
             existing_urls.add(article.url)
             stats["saved"] += 1
-            if relevance == "RELEVANTE":
+            if enriched.ai_relevance == "RELEVANTE":
                 stats["relevante"] += 1
             else:
                 stats["lixo"] += 1
@@ -90,3 +106,34 @@ def run_ingest(
             stats["errors"].append(f"{article.url}: {exc}")
 
     return stats
+
+
+def enrich_missing_items(db: Session) -> dict[str, int]:
+    items = db.scalars(select(NewsItem).where(NewsItem.description == "")).all()
+
+    processed = 0
+    errors = 0
+
+    for item in items:
+        try:
+            raw = RawArticle(
+                title=item.title_original or item.title,
+                url=item.url,
+                source=item.source,
+                description_snippet=item.description,
+            )
+            enriched = enrich_article(raw)
+            item.title = enriched.title_pt
+            item.title_original = raw.title
+            item.description = enriched.description_pt
+            item.ai_relevance = enriched.ai_relevance
+            if item.hype_score == 0:
+                item.hype_score = compute_hype_score(raw)
+            db.commit()
+            processed += 1
+        except Exception as exc:
+            db.rollback()
+            errors += 1
+            logger.warning("Backfill failed for %s: %s", item.url, exc)
+
+    return {"processed": processed, "errors": errors, "candidates": len(items)}

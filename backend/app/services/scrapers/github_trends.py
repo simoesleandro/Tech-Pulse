@@ -5,7 +5,7 @@ from app.services.scrapers.base import RawArticle
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
 DEFAULT_LIMIT = 10
 REQUEST_TIMEOUT = 15
-USER_AGENT = "TechPulse/1.0 (local dev feed aggregator)"
+USER_AGENT = "Mozilla/5.0 (compatible; TechPulseBot/1.0; +https://github.com/simoesleandro/Tech-Pulse)"
 
 
 def fetch_github_trends(limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
@@ -31,6 +31,12 @@ def fetch_github_trends(limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
         url = item.get("html_url", "").strip()
         if title and url:
             articles.append(
-                RawArticle(title=title, url=url, source="github_trends")
+                RawArticle(
+                    title=title,
+                    url=url,
+                    source="github_trends",
+                    description_snippet=item.get("description", "").strip(),
+                    stars=int(item.get("stargazers_count", 0) or 0),
+                )
             )
     return articles
