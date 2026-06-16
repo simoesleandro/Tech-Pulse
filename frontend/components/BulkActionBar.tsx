@@ -16,6 +16,7 @@ interface BulkActionBarProps {
   onDelete: () => void;
   onExportObsidian?: () => void;
   disabled?: boolean;
+  busyAction?: string | null;
 }
 
 export function BulkActionBar({
@@ -34,9 +35,26 @@ export function BulkActionBar({
   onDelete,
   onExportObsidian,
   disabled = false,
+  busyAction = null,
 }: BulkActionBarProps) {
   if (selectedCount === 0) {
     return null;
+  }
+
+  function actionClass(actionId: string, extra = ""): string {
+    const isLoading = busyAction === actionId;
+    return `btn-interactive rounded-md border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide ${
+      isLoading ? "border-cyan/50 text-cyan" : extra || "border-border text-muted"
+    }`;
+  }
+
+  function ActionSpinner() {
+    return (
+      <span
+        className="mr-1 inline-block h-3 w-3 animate-spin rounded-full border border-cyan/30 border-t-cyan"
+        aria-hidden="true"
+      />
+    );
   }
 
   return (
@@ -76,34 +94,38 @@ export function BulkActionBar({
         <button
           type="button"
           onClick={onMarkRead}
-          disabled={disabled}
-          className="btn-interactive rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted"
+          disabled={disabled || Boolean(busyAction)}
+          className={actionClass("read")}
         >
-          Lidas
+          {busyAction === "read" ? <ActionSpinner /> : null}
+          {busyAction === "read" ? "Marcando…" : "Lidas"}
         </button>
         <button
           type="button"
           onClick={onMarkUnread}
-          disabled={disabled}
-          className="btn-interactive rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted"
+          disabled={disabled || Boolean(busyAction)}
+          className={actionClass("unread")}
         >
-          Não lidas
+          {busyAction === "unread" ? <ActionSpinner /> : null}
+          {busyAction === "unread" ? "Marcando…" : "Não lidas"}
         </button>
         <button
           type="button"
           onClick={onBookmark}
-          disabled={disabled}
-          className="btn-interactive rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted"
+          disabled={disabled || Boolean(busyAction)}
+          className={actionClass("bookmark")}
         >
-          Favoritar
+          {busyAction === "bookmark" ? <ActionSpinner /> : null}
+          {busyAction === "bookmark" ? "Favoritando…" : "Favoritar"}
         </button>
         <button
           type="button"
           onClick={onUnbookmark}
-          disabled={disabled}
-          className="btn-interactive rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted"
+          disabled={disabled || Boolean(busyAction)}
+          className={actionClass("unbookmark")}
         >
-          Desfavoritar
+          {busyAction === "unbookmark" ? <ActionSpinner /> : null}
+          {busyAction === "unbookmark" ? "Removendo…" : "Desfavoritar"}
         </button>
 
         {folders.length > 0 ? (
@@ -132,30 +154,40 @@ export function BulkActionBar({
         <button
           type="button"
           onClick={onRemoveFromFolder}
-          disabled={disabled}
-          className="btn-interactive rounded-md border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted"
+          disabled={disabled || Boolean(busyAction)}
+          className={actionClass("clear-folder")}
         >
-          Tirar pasta
+          {busyAction === "clear-folder" ? <ActionSpinner /> : null}
+          {busyAction === "clear-folder" ? "Removendo…" : "Tirar pasta"}
         </button>
 
         {onExportObsidian ? (
           <button
             type="button"
             onClick={onExportObsidian}
-            disabled={disabled}
-            className="btn-interactive rounded-md border border-violet-400/40 bg-violet-500/10 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-violet-300"
+            disabled={disabled || Boolean(busyAction)}
+            className={actionClass(
+              "obsidian",
+              "border-violet-400/40 bg-violet-500/10 text-violet-300",
+            )}
           >
-            Obsidian
+            {busyAction === "obsidian" ? <ActionSpinner /> : null}
+            {busyAction === "obsidian" ? "Agente…" : "Obsidian"}
           </button>
         ) : null}
 
         <button
           type="button"
           onClick={onDelete}
-          disabled={disabled}
-          className="btn-interactive btn-danger rounded-md border border-crimson/50 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide text-crimson"
+          disabled={disabled || Boolean(busyAction)}
+          className={`btn-interactive btn-danger rounded-md border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide ${
+            busyAction === "delete"
+              ? "border-crimson bg-crimson/20 text-crimson"
+              : "border-crimson/50 text-crimson"
+          }`}
         >
-          Excluir
+          {busyAction === "delete" ? <ActionSpinner /> : null}
+          {busyAction === "delete" ? "Excluindo…" : "Excluir"}
         </button>
       </div>
     </div>

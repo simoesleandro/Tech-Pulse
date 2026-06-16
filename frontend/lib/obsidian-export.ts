@@ -1,10 +1,11 @@
+import { formatNewsForObsidian } from "@/lib/api";
 import type { NewsItem } from "@/lib/types";
 
 function escapeYaml(value: string): string {
   return value.replace(/"/g, '\\"');
 }
 
-export function newsItemsToObsidianMarkdown(items: NewsItem[]): string {
+function fallbackMarkdown(items: NewsItem[]): string {
   return items
     .map((item) => {
       const tags = ["tech-pulse", item.source.replace(/[^\w-]/g, "-")];
@@ -21,17 +22,31 @@ created: ${item.created_at}
 
 # ${item.title}
 
-${item.description.trim()}
+> [!abstract] Visão geral
+> ${item.description.trim()}
 
-${reasoning ? `> **Análise de hype:** ${reasoning}\n` : ""}
-[Abrir original](${item.url})
+${reasoning ? `> [!info] Avaliação Tech-Pulse\n> ${reasoning}\n` : ""}
+[Fonte original](${item.url})
 `;
     })
     .join("\n---\n\n");
 }
 
-export function downloadObsidianMarkdown(items: NewsItem[], filename?: string): void {
-  const markdown = newsItemsToObsidianMarkdown(items);
+export async function newsItemsToObsidianMarkdown(items: NewsItem[]): Promise<string> {
+  if (items.length === 0) {
+    return "";
+  }
+
+  try {
+    const result = await formatNewsForObsidian(items.map((item) => item.id));
+    return result.markdown;
+  } catch {
+    return fallbackMarkdown(items);
+  }
+}
+
+export async function downloadObsidianMarkdown(items: NewsItem[], filename?: string): Promise<void> {
+  const markdown = await newsItemsToObsidianMarkdown(items);
   const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -44,5 +59,6 @@ export function downloadObsidianMarkdown(items: NewsItem[], filename?: string): 
 }
 
 export async function copyObsidianMarkdown(items: NewsItem[]): Promise<void> {
-  await navigator.clipboard.writeText(newsItemsToObsidianMarkdown(items));
+  const markdown = await newsItemsToObsidianMarkdown(items);
+  await navigator.clipboard.writeText(markdown);
 }

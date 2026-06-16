@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   assignNewsFolder,
   deleteNewsItem,
-  exportNewsToObsidian,
   patchBookmarkStatus,
   patchReadStatus,
 } from "@/lib/api";
@@ -18,6 +17,7 @@ interface CardActionMenuProps {
   folders: TopicFolder[];
   onUpdate: (item: NewsItem) => void;
   onRemove?: (id: number) => void;
+  onObsidianExport?: (ids: number[]) => void;
   disabled?: boolean;
 }
 
@@ -31,16 +31,26 @@ function MenuIcon() {
   );
 }
 
+function Spinner() {
+  return (
+    <span
+      className="inline-block h-3 w-3 animate-spin rounded-full border border-current/30 border-t-current"
+      aria-hidden="true"
+    />
+  );
+}
+
 export function CardActionMenu({
   item,
   view,
   folders,
   onUpdate,
   onRemove,
+  onObsidianExport,
   disabled = false,
 }: CardActionMenuProps) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -59,47 +69,54 @@ export function CardActionMenu({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
-  async function runAction(action: () => Promise<void>) {
-    if (busy || disabled) {
+  async function runAction(actionId: string, action: () => Promise<void>, keepOpen = false) {
+    if (activeActionId || disabled) {
       return;
     }
-    setBusy(true);
+    setActiveActionId(actionId);
     setMessage(null);
     try {
       await action();
-      setOpen(false);
+      if (!keepOpen) {
+        setOpen(false);
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Erro ao executar ação.");
     } finally {
-      setBusy(false);
+      setActiveActionId(null);
     }
   }
 
   function menuButton(
     id: string,
     label: string,
+    loadingLabel: string,
     onClick: () => Promise<void>,
     variant: "default" | "danger" = "default",
     confirm?: () => boolean,
+    keepOpen = false,
   ) {
+    const isLoading = activeActionId === id;
+
     return (
       <button
         key={id}
         type="button"
-        disabled={busy || disabled}
+        disabled={Boolean(activeActionId) || disabled}
         onClick={() => {
           if (confirm && !confirm()) {
             return;
           }
-          void runAction(onClick);
+          void runAction(id, onClick, keepOpen);
         }}
-        className={`w-full px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wide ${
+        className={`flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wide ${
           variant === "danger"
             ? "text-crimson hover:bg-crimson/10"
             : "text-foreground hover:bg-cyan/10 hover:text-cyan"
-        }`}
+        } ${isLoading ? "opacity-100" : ""}`}
       >
-        {label}
+        {isLoading ? <Spinner /> : null}
+        <span>{isLoading ? loadingLabel : label}</span>
       </button>
     );
   }
@@ -109,6 +126,7 @@ export function CardActionMenu({
       ? menuButton(
           "toggle-read",
           item.is_read ? "Marcar não lida" : "Marcar lida",
+          item.is_read ? "Marcando não lida…" : "Marcando lida…",
           async () => {
             const updated = await patchReadStatus(item.id, !item.is_read);
             onUpdate(updated);
@@ -118,6 +136,7 @@ export function CardActionMenu({
     menuButton(
       "toggle-bookmark",
       item.is_bookmarked ? "Remover favorito" : "Favoritar",
+      item.is_bookmarked ? "Removendo favorito…" : "Favoritando…",
       async () => {
         const updated = await patchBookmarkStatus(item.id, !item.is_bookmarked);
         onUpdate(updated);
@@ -136,13 +155,18 @@ export function CardActionMenu({
             Mover para pasta
           </p>,
           ...folders.map((folder) =>
-            menuButton(`folder-${folder.id}`, `→ ${folder.name}`, async () => {
-              const updated = await assignNewsFolder(item.id, folder.id);
-              onUpdate(updated);
-            }),
+            menuButton(
+              `folder-${folder.id}`,
+              `→ ${folder.name}`,
+              `Movendo para ${folder.name}…`,
+              async () => {
+                const updated = await assignNewsFolder(item.id, folder.id);
+                onUpdate(updated);
+              },
+            ),
           ),
           item.folder_id
-            ? menuButton("clear-folder", "Tirar da pasta", async () => {
+            ? menuButton("clear-folder", "Tirar da pasta", "Removendo da pasta…", async () => {
                 const updated = await assignNewsFolder(item.id, null);
                 onUpdate(updated);
               })
@@ -152,18 +176,31 @@ export function CardActionMenu({
 
   const exportItems = [
     <div key="export-divider" className="my-1 border-t border-border/60" />,
-    menuButton("obsidian", "Enviar ao Obsidian", async () => {
-      const result = await exportNewsToObsidian([item.id]);
-      setMessage(`${result.exported} nota enviada ao Obsidian.`);
-    }),
-    menuButton("copy-md", "Copiar Markdown", async () => {
+    menuButton(
+      "obsidian",
+      "Enviar ao Obsidian",
+      "Iniciando agente…",
+      async () => {
+        if (onObsidianExport) {
+          onObsidianExport([item.id]);
+          setOpen(false);
+          return;
+        }
+        throw new Error("Exportação Obsidian indisponível.");
+      },
+      "default",
+      undefined,
+      true,
+    ),
+    menuButton("copy-md", "Copiar Markdown", "Formatando…", async () => {
       await copyObsidianMarkdown([item]);
-      setMessage("Markdown copiado.");
+      setMessage("Markdown formatado copiado.");
     }),
     <div key="delete-divider" className="my-1 border-t border-border/60" />,
     menuButton(
       "delete",
       "Excluir",
+      "Excluindo…",
       async () => {
         await deleteNewsItem(item.id);
         onRemove?.(item.id);
@@ -173,24 +210,27 @@ export function CardActionMenu({
     ),
   ];
 
+  const menuBusy = Boolean(activeActionId);
+
   return (
     <div ref={rootRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        disabled={disabled}
+        disabled={disabled || menuBusy}
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-busy={menuBusy}
         aria-label={`Ações para ${item.title}`}
         className="btn-interactive flex h-9 w-9 items-center justify-center rounded-md border border-border/80 bg-surface-elevated/90 text-muted shadow-sm backdrop-blur hover:border-cyan/50 hover:text-cyan"
       >
-        <MenuIcon />
+        {menuBusy ? <Spinner /> : <MenuIcon />}
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-full z-20 mt-1 min-w-[200px] overflow-hidden rounded-md border border-border bg-surface-elevated py-1 shadow-lg"
+          className="absolute right-0 top-full z-20 mt-1 min-w-[220px] overflow-hidden rounded-md border border-border bg-surface-elevated py-1 shadow-lg"
         >
           {[...menuItems, ...folderItems, ...exportItems].filter(Boolean)}
         </div>

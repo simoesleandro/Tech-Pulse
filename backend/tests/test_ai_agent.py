@@ -33,11 +33,24 @@ def test_parse_tradutor_json_fallback():
 
 def test_parse_hype_json_response():
     raw = (
-        '{"hype": 3, "reasoning": "Tema técnico relevante, mas impacto moderado na comunidade."}'
+        '{"hype": 3, "novelty": 2, "practicality": 4, "community_signal": 3, '
+        '"reasoning": "Tema técnico relevante, mas impacto moderado na comunidade."}'
     )
     assessment = _parse_hype_response(raw)
     assert assessment.hype == 3
+    assert assessment.novelty == 2
+    assert assessment.practicality == 4
+    assert assessment.community_signal == 3
+    assert "Novidade 2" in assessment.reasoning
+    assert "Utilidade 4" in assessment.reasoning
     assert "moderado" in assessment.reasoning
+
+
+def test_parse_hype_json_legacy_without_rubric():
+    raw = '{"hype": 4, "reasoning": "Guia prático com alto interesse."}'
+    assessment = _parse_hype_response(raw)
+    assert assessment.hype == 4
+    assert assessment.reasoning == "Guia prático com alto interesse."
 
 
 def test_agente_triador_relevante():
@@ -90,7 +103,8 @@ def test_orquestrador_relevante_runs_all_agents():
     responses = [
         "RELEVANTE",
         '{"titulo_pt": "Construindo agentes LLM com Python", "descricao_pt": "Guia de orquestração."}',
-        '{"hype": 4, "reasoning": "Guia prático com alto interesse da comunidade Python."}',
+        '{"hype": 4, "novelty": 3, "practicality": 4, "community_signal": 4, '
+        '"reasoning": "Guia prático com alto interesse da comunidade Python."}',
     ]
 
     with patch(
@@ -105,5 +119,11 @@ def test_orquestrador_relevante_runs_all_agents():
     assert enriched.description_pt == "Guia de orquestração."
     assert enriched.hype_score == 4
     assert enriched.ai_reasoning is not None
-    assert "comunidade" in enriched.ai_reasoning
+    assert "Utilidade 4" in enriched.ai_reasoning
     assert mock_generate.call_count == 3
+
+    hype_call = mock_generate.call_args_list[2]
+    assert hype_call.kwargs.get("options") == {"temperature": 0.15, "num_predict": 256}
+    hype_prompt = hype_call.args[0]
+    assert "Guia de orquestração." in hype_prompt
+    assert "Score de engajamento pré-calculado" in hype_prompt

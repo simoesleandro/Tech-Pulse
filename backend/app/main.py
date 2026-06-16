@@ -35,6 +35,8 @@ from app.schemas import (
     NewsListResponse,
     ObsidianExportRequest,
     ObsidianExportResult,
+    ObsidianFormatResult,
+    ObsidianFormattedItem,
     ObsidianStatusResponse,
     PipelineConfigResponse,
     PipelineStepResponse,
@@ -50,8 +52,10 @@ from app.services.pipeline_config import (
 from app.services.hype_backfill import backfill_missing_hype
 from app.services.ingest import enrich_missing_items, run_ingest, set_ingest_cancel_event
 from app.services.obsidian import (
+    build_obsidian_note,
     check_rest_connection,
     export_items_to_obsidian,
+    format_items_for_obsidian,
     get_obsidian_config,
 )
 from app.services.seed import seed_demo_articles
@@ -587,8 +591,28 @@ def obsidian_status():
     )
 
 
+@app.post("/api/obsidian/format", response_model=ObsidianFormatResult)
+async def format_obsidian_notes(payload: ObsidianExportRequest, db: Session = Depends(get_db)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Nenhum item selecionado")
+
+    items = db.scalars(
+        select(NewsItem).where(NewsItem.id.in_(payload.ids)).order_by(NewsItem.created_at.desc())
+    ).all()
+    if not items:
+        raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
+
+    formatted = await format_items_for_obsidian(items, use_agent=True)
+    result_items = [
+        ObsidianFormattedItem(id=item.id, markdown=build_obsidian_note(item, body))
+        for item, body in formatted
+    ]
+    combined = "\n---\n\n".join(entry.markdown for entry in result_items)
+    return ObsidianFormatResult(items=result_items, markdown=combined)
+
+
 @app.post("/api/obsidian/export", response_model=ObsidianExportResult)
-def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depends(get_db)):
+async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depends(get_db)):
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Nenhum item selecionado")
 
@@ -599,7 +623,7 @@ def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
 
     try:
-        result = export_items_to_obsidian(items)
+        result = await export_items_to_obsidian(items, emit=None)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -610,6 +634,35 @@ def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depends(get
         )
 
     return ObsidianExportResult(**result)
+
+
+def _run_obsidian_export_job(items: list[NewsItem], emit) -> dict:
+    return asyncio.run(export_items_to_obsidian(items, emit=emit))
+
+
+@app.post("/api/obsidian/export/stream")
+async def export_to_obsidian_stream(
+    payload: ObsidianExportRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Nenhum item selecionado")
+
+    items = db.scalars(
+        select(NewsItem).where(NewsItem.id.in_(payload.ids)).order_by(NewsItem.created_at.desc())
+    ).all()
+    if not items:
+        raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
+
+    def job(emit):
+        try:
+            return _run_obsidian_export_job(items, emit)
+        except RuntimeError as exc:
+            emit({"type": "error", "message": str(exc)})
+            raise
+
+    return _stream_sync_job(job, request)
 
 
 @app.post("/api/ingest", response_model=IngestResult)

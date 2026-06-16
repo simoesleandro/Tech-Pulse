@@ -5,6 +5,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.services.hype import compute_hype_score
 from app.services.ollama_client import ollama_generate
 from app.services.scrapers.base import EnrichedArticle, RawArticle
 
@@ -44,8 +45,18 @@ Responda EXATAMENTE neste formato JSON (sem markdown):
 HYPE_SYSTEM = (
     "Você avalia o impacto técnico de notícias para desenvolvedores de 0 a 5 estrelas. "
     "Use TODA a escala: 0 = irrelevante, 1 = muito baixo, 2 = nicho, 3 = moderado, "
-    "4 = alto impacto, 5 = disruptivo. Evite polarizar só em 1 ou 5."
+    "4 = alto impacto, 5 = disruptivo. Evite polarizar só em 1 ou 5.\n\n"
+    "Antes da nota final, avalie três dimensões (0-5 cada):\n"
+    "- novelty: quão novo ou inédito é o tema\n"
+    "- practicality: utilidade prática para o dia a dia de um dev\n"
+    "- community_signal: força do engajamento/buzz na comunidade\n\n"
+    "Exemplos calibrados:\n"
+    "1) 'Fix typo in README' → hype 1, novelty 0, practicality 1, community_signal 1\n"
+    "2) 'Guia completo de asyncio em Python' → hype 3, novelty 2, practicality 4, community_signal 3\n"
+    "3) 'OpenAI lança modelo open-source rival ao GPT-4' → hype 5, novelty 5, practicality 4, community_signal 5"
 )
+
+HYPE_OPTIONS = {"temperature": 0.15, "num_predict": 256}
 
 SOURCE_WEIGHT_HINTS = {
     "hacker_news": "Hacker News costuma trazer discussões densas e alto impacto.",
@@ -57,20 +68,25 @@ SOURCE_WEIGHT_HINTS = {
 HYPE_PROMPT = """Avalie o hype/impacto técnico desta matéria para desenvolvedores.
 
 Título (PT-BR): {title_pt}
+Resumo (PT-BR): {desc_pt}
+Título original: {title_original}
+Resumo original: {snippet}
 Fonte: {source}
 Contexto da fonte: {source_hint}
 
-Sinais de engajamento:
+Sinais brutos de engajamento:
 - Reações (dev.to): {reactions}
 - Comentários: {comments}
 - Stars (GitHub): {stars}
 - Upvotes (Reddit/HN): {ups}
 
+Score de engajamento pré-calculado (0-5, use como âncora para community_signal): {engagement_score}
+
 Escala obrigatória (use valores intermediários quando couber):
 0 = sem impacto · 1 = muito baixo · 2 = nicho · 3 = moderado · 4 = alto · 5 = disruptivo
 
 Responda EXATAMENTE neste JSON (sem markdown):
-{{"hype": número inteiro de 0 a 5, "reasoning": "uma frase curta em português explicando a nota"}}
+{{"hype": inteiro 0-5, "novelty": inteiro 0-5, "practicality": inteiro 0-5, "community_signal": inteiro 0-5, "reasoning": "1-2 frases em português explicando a nota"}}
 """
 
 
@@ -78,6 +94,39 @@ Responda EXATAMENTE neste JSON (sem markdown):
 class HypeAssessment:
     hype: int
     reasoning: str
+    novelty: int | None = None
+    practicality: int | None = None
+    community_signal: int | None = None
+
+
+def _clamp_score(value: object, default: int | None = None) -> int | None:
+    try:
+        return min(5, max(0, int(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_hype_reasoning(
+    *,
+    reasoning: str,
+    novelty: int | None = None,
+    practicality: int | None = None,
+    community_signal: int | None = None,
+) -> str:
+    dims: list[str] = []
+    if novelty is not None:
+        dims.append(f"Novidade {novelty}")
+    if practicality is not None:
+        dims.append(f"Utilidade {practicality}")
+    if community_signal is not None:
+        dims.append(f"Comunidade {community_signal}")
+
+    summary = reasoning.strip()
+    if dims and summary:
+        return f"{' · '.join(dims)} — {summary}"
+    if dims:
+        return " · ".join(dims)
+    return summary or "Impacto técnico avaliado pelo analista de hype."
 
 
 def _parse_relevance(raw: str) -> str:
@@ -117,15 +166,24 @@ def _parse_hype_response(raw: str) -> HypeAssessment:
     if json_match:
         try:
             data = json.loads(json_match.group(0))
-            hype = min(5, max(0, int(data.get("hype", 0))))
-            reasoning = str(data.get("reasoning", "")).strip()
-            if reasoning:
-                return HypeAssessment(hype=hype, reasoning=reasoning)
+            hype = _clamp_score(data.get("hype", 0), default=0) or 0
+            novelty = _clamp_score(data.get("novelty"))
+            practicality = _clamp_score(data.get("practicality"))
+            community_signal = _clamp_score(data.get("community_signal"))
+            reasoning = _format_hype_reasoning(
+                reasoning=str(data.get("reasoning", "")).strip(),
+                novelty=novelty,
+                practicality=practicality,
+                community_signal=community_signal,
+            )
             return HypeAssessment(
                 hype=hype,
-                reasoning="Impacto técnico avaliado pelo analista de hype.",
+                reasoning=reasoning,
+                novelty=novelty,
+                practicality=practicality,
+                community_signal=community_signal,
             )
-        except (json.JSONDecodeError, ValueError, TypeError):
+        except json.JSONDecodeError:
             pass
 
     hype_match = re.search(r"HYPE:\s*(\d)", raw, re.IGNORECASE)
@@ -158,18 +216,28 @@ async def agente_tradutor(article: RawArticle) -> tuple[str, str]:
     return title_pt, desc_pt
 
 
-async def agente_hype(article: RawArticle, title_pt: str) -> HypeAssessment:
+async def agente_hype(
+    article: RawArticle,
+    title_pt: str,
+    desc_pt: str,
+) -> HypeAssessment:
     source_hint = SOURCE_WEIGHT_HINTS.get(article.source, "Avalie o impacto técnico geral.")
+    snippet = article.description_snippet or "Sem descrição disponível."
+    engagement_score = compute_hype_score(article)
     prompt = HYPE_PROMPT.format(
         title_pt=title_pt,
+        desc_pt=desc_pt[:600],
+        title_original=article.title[:200],
+        snippet=snippet[:500],
         source=article.source,
         source_hint=source_hint,
         reactions=article.positive_reactions,
         comments=article.comments_count,
         stars=article.stars,
         ups=article.ups,
+        engagement_score=engagement_score,
     )
-    raw = await ollama_generate(prompt, system=HYPE_SYSTEM)
+    raw = await ollama_generate(prompt, system=HYPE_SYSTEM, options=HYPE_OPTIONS)
     assessment = _parse_hype_response(raw)
     logger.info("[hype] %s → %s estrelas — %s", article.url, assessment.hype, assessment.reasoning)
     return assessment
@@ -205,7 +273,7 @@ async def orquestrador_enriquecimento(
     emit("tradutor", "done", title_pt[:80])
 
     emit("hype", "active", title_pt[:80])
-    assessment = await agente_hype(article, title_pt)
+    assessment = await agente_hype(article, title_pt, desc_pt)
     emit("hype", "done", f"{assessment.hype} estrelas")
 
     return EnrichedArticle(

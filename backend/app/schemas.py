@@ -129,6 +129,16 @@ class ObsidianExportResult(BaseModel):
     errors: list[str] = []
 
 
+class ObsidianFormattedItem(BaseModel):
+    id: int
+    markdown: str
+
+
+class ObsidianFormatResult(BaseModel):
+    items: list[ObsidianFormattedItem]
+    markdown: str
+
+
 class ObsidianStatusResponse(BaseModel):
     configured: bool
     mode: str | None = None

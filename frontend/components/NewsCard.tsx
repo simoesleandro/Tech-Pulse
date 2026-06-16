@@ -14,6 +14,7 @@ interface NewsCardProps {
   folders?: TopicFolder[];
   onUpdate: (item: NewsItem) => void;
   onRemove?: (id: number) => void;
+  onObsidianExport?: (ids: number[]) => void;
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
   selectionDisabled?: boolean;
@@ -56,6 +57,7 @@ function NewsCardComponent({
   folders = [],
   onUpdate,
   onRemove,
+  onObsidianExport,
   selected = false,
   onToggleSelect,
   selectionDisabled = false,
@@ -103,6 +105,7 @@ function NewsCardComponent({
           folders={folders}
           onUpdate={handleUpdate}
           onRemove={onRemove}
+          onObsidianExport={onObsidianExport}
           disabled={busy}
         />
       </div>

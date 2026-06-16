@@ -12,6 +12,7 @@ import type {
   NewsItem,
   NewsListResponse,
   ObsidianExportResult,
+  ObsidianFormatResult,
   ObsidianStatus,
   PipelineConfig,
   SeedResult,
@@ -272,6 +273,15 @@ export async function exportNewsToObsidian(ids: number[]): Promise<ObsidianExpor
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
-    timeoutMs: 60_000,
+    timeoutMs: 180_000,
+  });
+}
+
+export async function formatNewsForObsidian(ids: number[]): Promise<ObsidianFormatResult> {
+  return apiJson<ObsidianFormatResult>("/api/obsidian/format", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+    timeoutMs: 180_000,
   });
 }

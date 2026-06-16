@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 import re
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -9,6 +11,7 @@ import httpx
 from dotenv import load_dotenv
 
 from app.models import NewsItem
+from app.services.obsidian_agent import ObsidianProgressCallback, agente_obsidian, fallback_obsidian_body
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +66,13 @@ def _escape_yaml(value: str) -> str:
     return value.replace('"', '\\"')
 
 
-def news_item_to_markdown(item: NewsItem) -> str:
+def _obsidian_tags(item: NewsItem) -> list[str]:
     source_tag = item.source.replace("/", "-").replace(".", "-")
-    tags = ["tech-pulse", source_tag]
-    reasoning = (item.ai_reasoning or "").strip()
+    return ["tech-pulse", source_tag]
 
+
+def build_obsidian_frontmatter(item: NewsItem) -> str:
+    tags = _obsidian_tags(item)
     return f"""---
 title: "{_escape_yaml(item.title)}"
 source: {item.source}
@@ -77,15 +82,27 @@ tags: [{", ".join(tags)}]
 techpulse_id: {item.id}
 created: {item.created_at.isoformat()}
 ---
-
-# {item.title}
-
-{item.description.strip()}
-
-{f"> **Análise de hype:** {reasoning}" if reasoning else ""}
-
-[Abrir original]({item.url})
 """
+
+
+def build_obsidian_note(item: NewsItem, body: str) -> str:
+    return f"{build_obsidian_frontmatter(item)}\n{body.strip()}\n"
+
+
+async def generate_obsidian_body(
+    item: NewsItem,
+    *,
+    use_agent: bool = True,
+    on_progress: ObsidianProgressCallback | None = None,
+) -> str:
+    if use_agent:
+        return await agente_obsidian(item, on_progress=on_progress)
+    return fallback_obsidian_body(item)
+
+
+def news_item_to_markdown(item: NewsItem) -> str:
+    """Compatibilidade síncrona — usa template fallback sem LLM."""
+    return build_obsidian_note(item, fallback_obsidian_body(item))
 
 
 def note_relative_path(item: NewsItem) -> str:
@@ -158,10 +175,54 @@ def _write_via_filesystem(relative_path: str, content: str) -> None:
     destination.write_text(content, encoding="utf-8")
 
 
-def export_items_to_obsidian(items: list[NewsItem]) -> dict:
+async def format_items_for_obsidian(
+    items: list[NewsItem],
+    *,
+    use_agent: bool = True,
+    on_progress: ObsidianProgressCallback | None = None,
+) -> list[tuple[NewsItem, str]]:
+    async def format_one(item: NewsItem) -> tuple[NewsItem, str]:
+        body = await generate_obsidian_body(item, use_agent=use_agent, on_progress=on_progress)
+        return item, body
+
+    if len(items) == 1:
+        item, body = await format_one(items[0])
+        return [(item, body)]
+
+    results = await asyncio.gather(*[format_one(item) for item in items])
+    return list(results)
+
+
+def _make_obsidian_emit(
+    emit: Callable[[dict], None] | None,
+    article_index: int,
+    article_total: int,
+) -> ObsidianProgressCallback:
+    def callback(step_id: str, status: str, detail: str | None = None) -> None:
+        if emit is None:
+            return
+        event: dict = {
+            "type": "step",
+            "step_id": step_id,
+            "status": status,
+            "article_index": article_index,
+            "article_total": article_total,
+        }
+        if detail:
+            event["detail"] = detail
+        emit(event)
+
+    return callback
+
+
+async def export_items_to_obsidian(
+    items: list[NewsItem],
+    emit: Callable[[dict], None] | None = None,
+) -> dict:
     _reload_settings()
     mode = get_obsidian_mode()
-    if mode is None:        raise RuntimeError(
+    if mode is None:
+        raise RuntimeError(
             "Obsidian não configurado. Defina OBSIDIAN_REST_API_KEY (plugin Local REST API) "
             "ou OBSIDIAN_VAULT_PATH no .env do backend."
         )
@@ -173,18 +234,48 @@ def export_items_to_obsidian(items: list[NewsItem]) -> dict:
 
     exported_paths: list[str] = []
     errors: list[str] = []
+    total = len(items)
 
-    for item in items:
-        relative_path = note_relative_path(item)
-        markdown = news_item_to_markdown(item)
+    for index, item in enumerate(items, start=1):
+        progress = _make_obsidian_emit(emit, index, total)
         try:
+            body = await generate_obsidian_body(item, use_agent=True, on_progress=progress)
+            relative_path = note_relative_path(item)
+            markdown = build_obsidian_note(item, body)
+
+            if emit:
+                emit(
+                    {
+                        "type": "step",
+                        "step_id": "write",
+                        "status": "active",
+                        "detail": relative_path,
+                        "article_index": index,
+                        "article_total": total,
+                    }
+                )
+
             if mode == "rest":
                 _write_via_rest(relative_path, markdown)
             else:
                 _write_via_filesystem(relative_path, markdown)
+
             exported_paths.append(relative_path)
+            if emit:
+                emit(
+                    {
+                        "type": "step",
+                        "step_id": "write",
+                        "status": "done",
+                        "detail": relative_path,
+                        "article_index": index,
+                        "article_total": total,
+                    }
+                )
         except Exception as exc:
             errors.append(f"{item.id}: {exc}")
+            if emit:
+                emit({"type": "error", "message": str(exc)})
 
     if mode == "rest" and exported_paths and OBSIDIAN_OPEN_AFTER_EXPORT:
         try:

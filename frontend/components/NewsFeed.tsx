@@ -7,10 +7,10 @@ import { BulkActionBar } from "@/components/BulkActionBar";
 import { EmptyState } from "@/components/EmptyState";
 import { FeedPagination } from "@/components/FeedPagination";
 import { NewsCard } from "@/components/NewsCard";
+import { ObsidianExportModal } from "@/components/ObsidianExportModal";
 import {
   bulkDeleteNews,
   bulkUpdateNews,
-  exportNewsToObsidian,
 } from "@/lib/api";
 import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
 
@@ -27,7 +27,9 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [items, setItems] = useState(initialItems);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBusy, setIsBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [obsidianExportIds, setObsidianExportIds] = useState<number[] | null>(null);
 
   const itemIdsKey = initialItems.map((item) => item.id).join(",");
 
@@ -72,17 +74,19 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     );
   }
 
-  async function runBulkAction(action: () => Promise<void>) {
+  async function runBulkAction(actionId: string, action: () => Promise<void>) {
     if (isBusy) {
       return;
     }
     setIsBusy(true);
+    setBusyAction(actionId);
     setActionMessage(null);
     try {
       await action();
       router.refresh();
     } finally {
       setIsBusy(false);
+      setBusyAction(null);
     }
   }
 
@@ -94,7 +98,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (!window.confirm(`Excluir ${ids.length} notícia(s)?`)) {
       return;
     }
-    void runBulkAction(async () => {
+    void runBulkAction("delete", async () => {
       await bulkDeleteNews(ids);
       setItems((current) => current.filter((item) => !ids.includes(item.id)));
       setSelectedIds([]);
@@ -106,7 +110,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (ids.length === 0) {
       return;
     }
-    void runBulkAction(async () => {
+    void runBulkAction(isRead ? "read" : "unread", async () => {
       await bulkUpdateNews({ ids, is_read: isRead });
       setItems((current) =>
         current.map((item) =>
@@ -121,7 +125,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (ids.length === 0) {
       return;
     }
-    void runBulkAction(async () => {
+    void runBulkAction(isBookmarked ? "bookmark" : "unbookmark", async () => {
       await bulkUpdateNews({ ids, is_bookmarked: isBookmarked });
       setItems((current) =>
         current.map((item) =>
@@ -144,7 +148,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
       return;
     }
     const folder = folders.find((entry) => entry.id === folderId);
-    void runBulkAction(async () => {
+    void runBulkAction(`folder-${folderId}`, async () => {
       await bulkUpdateNews({ ids, folder_id: folderId });
       setItems((current) =>
         current.map((item) =>
@@ -166,7 +170,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (ids.length === 0) {
       return;
     }
-    void runBulkAction(async () => {
+    void runBulkAction("clear-folder", async () => {
       await bulkUpdateNews({ ids, clear_folder: true });
       setItems((current) =>
         current.map((item) =>
@@ -183,10 +187,11 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (ids.length === 0) {
       return;
     }
-    void runBulkAction(async () => {
-      const result = await exportNewsToObsidian(ids);
-      setActionMessage(`${result.exported} nota(s) enviada(s) ao Obsidian.`);
-    });
+    setObsidianExportIds(ids);
+  }
+
+  function handleObsidianExport(ids: number[]) {
+    setObsidianExportIds(ids);
   }
 
   if (items.length === 0) {
@@ -208,6 +213,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
               folders={folders}
               onUpdate={handleUpdate}
               onRemove={handleRemove}
+              onObsidianExport={handleObsidianExport}
               selected={selectedIds.includes(item.id)}
               onToggleSelect={handleToggleSelect}
               selectionDisabled={isBusy}
@@ -236,6 +242,16 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
         onDelete={handleBulkDelete}
         onExportObsidian={handleBulkExportObsidian}
         disabled={isBusy}
+        busyAction={busyAction}
+      />
+
+      <ObsidianExportModal
+        ids={obsidianExportIds ?? []}
+        open={Boolean(obsidianExportIds?.length)}
+        onClose={() => setObsidianExportIds(null)}
+        onComplete={(exported) => {
+          setActionMessage(`${exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
+        }}
       />
     </div>
   );

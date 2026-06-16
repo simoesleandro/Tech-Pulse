@@ -73,6 +73,68 @@ export const BACKFILL_PIPELINE_STEPS: PipelineStepDef[] = [
   },
 ];
 
+export const OBSIDIAN_PIPELINE_STEPS: PipelineStepDef[] = [
+  {
+    id: "fetch",
+    label: "Buscando conteúdo completo do artigo…",
+    estimatedSeconds: 10,
+  },
+  {
+    id: "summarize",
+    label: "Agente — extraindo pontos técnicos concretos…",
+    estimatedSeconds: 50,
+    agent: "obsidian-summarize",
+  },
+  {
+    id: "analyze",
+    label: "Agente — estruturando tópicos e glossário…",
+    estimatedSeconds: 60,
+    agent: "obsidian-analyze",
+  },
+  {
+    id: "render",
+    label: "Montando nota Obsidian com callouts e wikilinks…",
+    estimatedSeconds: 2,
+  },
+  {
+    id: "write",
+    label: "Gravando nota no vault Obsidian…",
+    estimatedSeconds: 5,
+  },
+];
+
+export function applyObsidianStepEvent(
+  defs: PipelineStepDef[],
+  event: Extract<
+    import("@/lib/types").PipelineStepEvent,
+    { type: "step" }
+  >,
+): import("@/components/ActivityLog").ActivityStep[] {
+  const activeIndex = defs.findIndex((def) => def.id === event.step_id);
+  if (activeIndex < 0) {
+    return defs.map((def) => ({ ...def, status: "pending" as const }));
+  }
+
+  return defs.map((def, index) => {
+    let status: "pending" | "active" | "done" = "pending";
+    if (event.status === "active") {
+      if (index < activeIndex) {
+        status = "done";
+      } else if (index === activeIndex) {
+        status = "active";
+      }
+    } else if (index <= activeIndex) {
+      status = "done";
+    }
+
+    return {
+      ...def,
+      status,
+      detail: index === activeIndex ? event.detail : undefined,
+    };
+  });
+}
+
 export function formatEta(seconds: number): string {
   if (seconds < 60) {
     return `~${seconds}s`;

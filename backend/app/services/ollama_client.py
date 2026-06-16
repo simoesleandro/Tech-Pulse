@@ -59,7 +59,11 @@ async def resolve_ollama_model() -> str:
     return _resolved_model
 
 
-async def ollama_generate(prompt: str, system: str | None = None) -> str:
+async def ollama_generate(
+    prompt: str,
+    system: str | None = None,
+    options: dict | None = None,
+) -> str:
     model = await resolve_ollama_model()
     payload: dict = {
         "model": model,
@@ -68,6 +72,8 @@ async def ollama_generate(prompt: str, system: str | None = None) -> str:
     }
     if system:
         payload["system"] = system
+    if options:
+        payload["options"] = options
 
     async with _loop_semaphore():
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:

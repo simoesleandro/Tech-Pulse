@@ -67,7 +67,7 @@ export type PipelineStepEvent =
     }
   | {
       type: "complete";
-      result: IngestResult | EnrichBackfillResult;
+      result: IngestResult | EnrichBackfillResult | ObsidianExportResult;
     }
   | {
       type: "error";
@@ -115,6 +115,11 @@ export interface ObsidianExportResult {
   paths: string[];
   mode: string;
   errors: string[];
+}
+
+export interface ObsidianFormatResult {
+  items: { id: number; markdown: string }[];
+  markdown: string;
 }
 
 export interface ObsidianStatus {
