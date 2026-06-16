@@ -16,7 +16,7 @@ import type { EnrichBackfillResult, IngestResult } from "@/lib/types";
 type ActiveAction = "idle" | "ingest" | "backfill";
 
 const INGEST_STEP_DEFS = [
-  { id: "fetch", label: "Buscando artigos em dev.to, Reddit e GitHub Trends…" },
+  { id: "fetch", label: "Buscando artigos em dev.to, Reddit, Hacker News, GitHub e RSS…" },
   { id: "dedup", label: "Filtrando duplicatas já existentes no feed…" },
   {
     id: "classify",

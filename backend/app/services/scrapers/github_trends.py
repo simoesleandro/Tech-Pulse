@@ -1,25 +1,30 @@
+from datetime import UTC, datetime, timedelta
+
 import requests
 
 from app.services.scrapers.base import RawArticle
+from app.services.scrapers.http_utils import REQUEST_TIMEOUT
 
 GITHUB_SEARCH_URL = "https://api.github.com/search/repositories"
+GITHUB_USER_AGENT = "Mozilla/5.0 (compatible; TechPulseBot/1.0; +https://github.com/simoesleandro/Tech-Pulse)"
 DEFAULT_LIMIT = 10
-REQUEST_TIMEOUT = 15
-USER_AGENT = "Mozilla/5.0 (compatible; TechPulseBot/1.0; +https://github.com/simoesleandro/Tech-Pulse)"
 
 
 def fetch_github_trends(limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
+    week_ago = (datetime.now(UTC) - timedelta(days=7)).strftime("%Y-%m-%d")
+    query = f"stars:>100 pushed:>{week_ago}"
+
     response = requests.get(
         GITHUB_SEARCH_URL,
         params={
-            "q": "stars:>500",
-            "sort": "updated",
+            "q": query,
+            "sort": "stars",
             "order": "desc",
             "per_page": limit,
         },
         headers={
             "Accept": "application/vnd.github+json",
-            "User-Agent": USER_AGENT,
+            "User-Agent": GITHUB_USER_AGENT,
         },
         timeout=REQUEST_TIMEOUT,
     )
@@ -35,7 +40,7 @@ def fetch_github_trends(limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
                     title=title,
                     url=url,
                     source="github_trends",
-                    description_snippet=item.get("description", "").strip(),
+                    description_snippet=(item.get("description") or "").strip(),
                     stars=int(item.get("stargazers_count", 0) or 0),
                 )
             )

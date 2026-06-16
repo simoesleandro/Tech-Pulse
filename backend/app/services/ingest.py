@@ -14,7 +14,13 @@ from app.services.hype_backfill import (
     resolve_hype_score,
 )
 from app.services.ollama import enrich_article
-from app.services.scrapers import fetch_devto, fetch_github_trends, fetch_reddit
+from app.services.scrapers import (
+    fetch_devto,
+    fetch_github_trends,
+    fetch_hacker_news,
+    fetch_reddit,
+    fetch_rss_feeds,
+)
 from app.services.scrapers.base import RawArticle
 
 logger = logging.getLogger(__name__)
@@ -28,7 +34,13 @@ def _fetcher_name(fetcher: Fetcher) -> str:
     return getattr(fetcher, "__name__", "fetcher")
 
 
-DEFAULT_FETCHERS: list[Fetcher] = [fetch_devto, fetch_reddit, fetch_github_trends]
+DEFAULT_FETCHERS: list[Fetcher] = [
+    fetch_devto,
+    fetch_reddit,
+    fetch_github_trends,
+    fetch_hacker_news,
+    fetch_rss_feeds,
+]
 
 
 def _load_existing_urls(db: Session) -> set[str]:

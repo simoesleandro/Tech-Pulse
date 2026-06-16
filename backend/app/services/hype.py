@@ -10,6 +10,8 @@ def compute_hype_score(article: RawArticle) -> int:
         raw = math.log10(max(article.stars, 0) + 1) * 1.75
     elif article.source == "reddit":
         raw = math.log10(max(article.ups, 0) + 1) * 2.1
+    elif article.source == "hacker_news":
+        raw = math.log10(max(article.ups, 0) + 1) * 2.3 + article.comments_count * 0.05
     else:
         raw = 2.0
 

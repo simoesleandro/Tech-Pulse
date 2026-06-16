@@ -26,6 +26,14 @@ const THEMES: Record<string, SourceTheme> = {
     linkClass: "link-source-reddit",
     fieldLabelClass: "field-label-reddit",
   },
+  hacker_news: {
+    label: "Hacker News",
+    shortLabel: "HN",
+    cardClass: "card-source-hackernews",
+    badgeClass: "badge-source-hackernews",
+    linkClass: "link-source-hackernews",
+    fieldLabelClass: "field-label-hackernews",
+  },
   github_trends: {
     label: "GitHub",
     shortLabel: "GH",
