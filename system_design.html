@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechPulse - System Design Documentation</title>
+    <style>
+        :root {
+            --bg-principal: #0F172A;
+            --bg-card: #1E293B;
+            --border-color: #334155;
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
+            --cyber-cyan: #06B6D4;
+            --emerald: #10B981;
+            --crimson: #EF4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-principal);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            padding: 2rem 1rem;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        .logo {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--text-main);
+            letter-spacing: -1px;
+        }
+
+        .logo span {
+            color: var(--cyber-cyan);
+        }
+
+        .tagline {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            margin-top: 0.5rem;
+            font-style: italic;
+        }
+
+        section {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2.5rem;
+        }
+
+        h2 {
+            color: var(--cyber-cyan);
+            font-size: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        h3 {
+            color: var(--text-main);
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.5rem 0;
+        }
+
+        p {
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        ul {
+            margin-left: 1.5rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        .grid-brands {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .brand-item {
+            background: var(--bg-principal);
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 4px solid var(--cyber-cyan);
+        }
+
+        .brand-item strong {
+            display: block;
+            color: var(--text-main);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            background-color: var(--bg-principal);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+
+        th {
+            background-color: #1e293b;
+            color: var(--cyber-cyan);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        td {
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+        }
+
+        code {
+            font-family: "Fira Code", Consolas, Monaco, monospace;
+            background-color: var(--bg-principal);
+            color: #e2e8f0;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        pre {
+            background-color: var(--bg-principal);
+            padding: 1rem;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid var(--border-color);
+            margin: 1rem 0;
+        }
+
+        pre code {
+            padding: 0;
+            background: none;
+        }
+
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .flow-step {
+            background: var(--bg-principal);
+            padding: 1rem;
+            border-radius: 6px;
+            border: 1px dashed var(--border-color);
+            position: relative;
+        }
+
+        .flow-step::before {
+            content: "➔";
+            position: absolute;
+            bottom: -22px;
+            left: 50%;
+            transform: translateX(-50%) rotate(90deg);
+            color: var(--cyber-cyan);
+            font-size: 1.2rem;
+        }
+
+        .flow-step:last-child::before {
+            display: none;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+
+        .badge-success { background-color: rgba(16, 185, 129, 0.2); color: var(--emerald); }
+        .badge-danger { background-color: rgba(239, 68, 68, 0.2); color: var(--crimson); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="logo">⚡ TECH<span>[PULSE]</span></div>
+            <div class="tagline">Your localized, AI-filtered engineering intelligence feed. Zero noise, just signal.</div>
+        </header>
+
+        <!-- SECTION 1: IDENTITY -->
+        <section>
+            <h2>🎨 Brand Identity & Concept</h2>
+            <p>O TechPulse foi concebido para mitigar a fadiga de informação de engenheiros de software, consolidando canais técnicos relevantes em uma interface limpa, estrita e sem distrações visuais ou gamificação.</p>
+            
+            <div class="grid-brands">
+                <div class="brand-item">
+                    <strong>Primary Dark</strong>
+                    <code>#0F172A</code> (Slate Dark)
+                </div>
+                <div class="brand-item">
+                    <strong>Accent Color</strong>
+                    <code>#06B6D4</code> (Cyber Cyan)
+                </div>
+                <div class="brand-item">
+                    <strong>Surface Card</strong>
+                    <code>#1E293B</code> (Deep Grey)
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: SYSTEM DESIGN -->
+        <section>
+            <h2>📐 System Architecture (System Design)</h2>
+            <p>O design do sistema adota um modelo <strong>assíncrono e desacoplado</strong> para evitar que a latência da inferência de IA local (Gemma via Ollama) degrade a experiência de navegação do usuário no Front-end.</p>
+            
+            <h3>1. Fluxo de Dados de Ingestão (Background Loop)</h3>
+            <div class="flow-container">
+                <div class="flow-step">
+                    <strong>Etapa 1: Ingestão Ativa (Scraper Engine)</strong>
+                    <p>O módulo do FastAPI executa rotinas de captura consumindo feeds e APIs públicas do Dev.to, Reddit e GitHub Trends.</p>
+                </div>
+                <div class="flow-step">
+                    <strong>Etapa 2: Sanitização e Deduplicação</strong>
+                    <p>Os payloads brutos são limpos. Links já existentes no banco de dados SQLite são descartados imediatamente para poupar hardware.</p>
+                </div>
+                <div class="flow-step">
+                    <strong>Etapa 3: Governança por IA Local (Ollama)</strong>
+                    <p>O título do artigo é submetido ao modelo <strong>Gemma Local</strong>. A IA atua como um firewall cognitivo estrito.</p>
+                </div>
+                <div class="flow-step">
+                    <strong>Etapa 4: Persistência Estruturada</strong>
+                    <p>Artigos validados recebem a flag de relevância e são armazenados fisicamente no arquivo do banco SQLite.</p>
+                </div>
+            </div>
+
+            <h3>2. Fluxo de Consumo (Client Interface)</h3>
+            <p>O Front-end desenvolvido em <strong>React / Next.js</strong> realiza chamadas HTTP REST limpas para a API do <strong>FastAPI</strong>. Como a inteligência e o processamento de dados ocorreram na ingestão, as consultas ao banco de dados SQLite retornam em milissegundos.</p>
+        </section>
+
+        <!-- SECTION 3: TECHNICAL STACK -->
+        <section>
+            <h2>🛠️ Technical Stack (Tecnologias)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Camada</th>
+                        <th>Tecnologia Escolhida</th>
+                        <th>Justificativa Técnica</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Front-end</strong></td>
+                        <td>React / Next.js + Tailwind CSS</td>
+                        <td>Componentização eficiente, renderização rápida e estilização focada em UI limpa e sóbria.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Back-end API</strong></td>
+                        <td>FastAPI (Python)</td>
+                        <td>Alta performance nativa assíncrona, facilidade de manipulação de dados e documentação automática Swagger.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>AI Inference</strong></td>
+                        <td>Gemma Local via Ollama</td>
+                        <td>Privacidade total dos dados de leitura, custo zero de infraestrutura de nuvem externa (Tokens) e controle de latência.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Database</strong></td>
+                        <td>SQLite</td>
+                        <td>Serverless, leve, ideal para persistência local em ambientes de desenvolvimento rápidos e isolados.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- SECTION 4: DATA MODEL -->
+        <section>
+            <h2>🗄️ Relational Data Model (Schema SQL)</h2>
+            <p>Abaixo está o esquema DDL estrito da tabela principal que residirá no SQLite, otimizada com indexação de segurança.</p>
+            <pre><code>CREATE TABLE news_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    url TEXT UNIQUE NOT NULL,          -- Impede duplicidade de links em nível de banco
+    source TEXT NOT NULL,              -- 'github_trends', 'dev.to', 'reddit'
+    ai_relevance TEXT NOT NULL,        -- 'RELEVANTE' ou 'LIXO'
+    is_read BOOLEAN DEFAULT 0,         -- Estado de consumo do usuário
+    is_bookmarked BOOLEAN DEFAULT 0,   -- Sistema de salvamento interno
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Índice para acelerar a renderização da fila de notícias não lidas
+CREATE INDEX idx_news_unread ON news_items (is_read, ai_relevance);</code></pre>
+        </section>
+
+        <!-- SECTION 5: AI PROMPT DESIGN -->
+        <section>
+            <h2>🧠 Structured Output AI Prompt</h2>
+            <p>Contrato estruturado utilizado na comunicação via cURL/HTTP entre o back-end em Python e a API local do Ollama para garantir saídas previsíveis sem poluição de texto:</p>
+            
+            <pre><code>{
+  "model": "gemma",
+  "system": "Você é um classificador de conteúdo técnico de elite para engenheiros de software. Sua resposta deve conter estritamente uma única palavra em maiúsculo.",
+  "prompt": "Analise o título do artigo: '[Inserir Título Aqui]'. Responda exclusivamente com 'RELEVANTE' se o assunto abordar Engenharia de Software, IA, Python, DevOps ou Bancos de Dados. Responda 'LIXO' se for clickbait comercial, vagas de emprego, memes ou notícias corporativas. Resposta:",
+  "stream": false
+}</code></pre>
+
+            <h3>Exemplo de Comportamento do Agente:</h3>
+            <ul>
+                <li><strong>Entrada:</strong> "Building an LLM Agent Orchestrator from Scratch with Python" &rarr; <span class="badge badge-success">RELEVANTE</span></li>
+                <li><strong>Entrada:</strong> "CEO of tech startup raises 50M dollars in Series A" &rarr; <span class="badge badge-danger">LIXO</span></li>
+            </ul>
+        </section>
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+:root {
+  --bg-principal: #0f172a;
+  --bg-card: #1e293b;
+  --bg-elevated: #162032;
+  --border-color: #334155;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --cyber-cyan: #06b6d4;
+  --cyber-cyan-dim: #0891b2;
+  --emerald: #10b981;
+  --crimson: #ef4444;
+}
+
+@theme inline {
+  --color-slate-dark: var(--bg-principal);
+  --color-surface: var(--bg-card);
+  --color-surface-elevated: var(--bg-elevated);
+  --color-border: var(--border-color);
+  --color-foreground: var(--text-main);
+  --color-muted: var(--text-muted);
+  --color-cyan: var(--cyber-cyan);
+  --color-cyan-dim: var(--cyber-cyan-dim);
+  --color-emerald: var(--emerald);
+  --color-crimson: var(--crimson);
+  --font-sans: var(--font-ibm-plex);
+  --font-mono: var(--font-jetbrains);
+}
+
+body {
+  background-color: var(--bg-principal);
+  color: var(--text-main);
+  font-family: var(--font-ibm-plex), system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes pulse-trace {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pulse-trace {
+  animation: pulse-trace 2.4s ease-in-out infinite;
+}
+
+.feed-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
+}
