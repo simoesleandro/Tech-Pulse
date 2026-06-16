@@ -108,3 +108,64 @@ def test_ingest_endpoint(client: TestClient):
 
     assert response.status_code == 200, response.text
     assert response.json() == mock_stats
+
+
+def test_ingest_stream_endpoint(client: TestClient):
+    mock_stats = {
+        "fetched": 1,
+        "skipped_duplicate": 0,
+        "classified": 1,
+        "saved": 1,
+        "relevante": 1,
+        "lixo": 0,
+        "errors": [],
+    }
+    events: list[dict] = []
+
+    def fake_ingest(db, on_progress=None, **kwargs):
+        if on_progress:
+            on_progress(
+                {
+                    "type": "step",
+                    "step_id": "fetch",
+                    "status": "done",
+                    "detail": "1 artigo",
+                }
+            )
+        return mock_stats
+
+    with patch("app.main.run_ingest", side_effect=fake_ingest):
+        response = client.post("/api/ingest/stream")
+
+    assert response.status_code == 200, response.text
+    assert "text/event-stream" in response.headers.get("content-type", "")
+
+    for line in response.text.strip().split("\n\n"):
+        if line.startswith("data: "):
+            import json
+
+            events.append(json.loads(line[6:]))
+
+    assert any(event.get("step_id") == "fetch" for event in events)
+    assert events[-1]["type"] == "complete"
+    assert events[-1]["result"] == mock_stats
+
+
+def test_ingest_emits_progress_events(db_session: Session):
+    events: list[dict] = []
+
+    def on_progress(event: dict) -> None:
+        events.append(event)
+
+    stats = run_ingest(
+        db_session,
+        fetchers=[_mock_fetch_devto, _mock_fetch_github],
+        enricher=_mock_enrich,
+        on_progress=on_progress,
+    )
+
+    assert stats["saved"] == 2
+    step_ids = [event["step_id"] for event in events if event.get("type") == "step"]
+    assert "fetch" in step_ids
+    assert "dedup" in step_ids
+    assert "save" in step_ids

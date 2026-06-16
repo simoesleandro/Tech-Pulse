@@ -42,6 +42,24 @@ export interface PipelineConfig {
   backfill: PipelineStep[];
 }
 
+export type PipelineStepEvent =
+  | {
+      type: "step";
+      step_id: string;
+      status: "active" | "done";
+      detail?: string;
+      article_index?: number;
+      article_total?: number;
+    }
+  | {
+      type: "complete";
+      result: IngestResult | EnrichBackfillResult;
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
 export interface IngestResult {
   fetched: number;
   skipped_duplicate: number;

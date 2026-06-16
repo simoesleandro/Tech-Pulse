@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from app.services.scrapers.devto import fetch_devto_by_tag
 from app.services.scrapers.hacker_news import fetch_hacker_news
 from app.services.scrapers.reddit import fetch_reddit_subreddit
-from app.services.scrapers.rss import parse_rss_feed
+from app.services.scrapers.rss import fetch_rss_feeds, parse_rss_feed
 
 
 def test_fetch_reddit_subreddit_uses_browser_headers():
@@ -128,3 +128,25 @@ def test_parse_rss_feed_extracts_items():
     assert len(articles) == 1
     assert articles[0].title == "TLDR AI headline"
     assert articles[0].source == "rss/tldr"
+
+
+def test_fetch_rss_feeds_iterates_dict_feeds():
+    xml = """<?xml version="1.0"?>
+    <rss><channel>
+      <item>
+        <title>Dict feed item</title>
+        <link>https://example.com/dict-feed</link>
+        <description>Summary</description>
+      </item>
+    </channel></rss>
+  """
+
+    feeds = {"custom_feed": "https://example.com/feed.xml"}
+
+    with patch("app.services.scrapers.rss.requests.get") as mock_get:
+        mock_get.return_value.content = xml.encode("utf-8")
+        mock_get.return_value.raise_for_status = MagicMock()
+        articles = fetch_rss_feeds(feeds)
+
+    assert len(articles) == 1
+    assert articles[0].source == "rss/custom_feed"

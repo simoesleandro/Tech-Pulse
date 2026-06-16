@@ -1,36 +1,32 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   ActivityLog,
-  buildSteps,
   markAllDone,
   type ActivityStep,
 } from "@/components/ActivityLog";
 import { checkApiHealth } from "@/lib/client-api";
-import { enrichBackfill, triggerIngest } from "@/lib/api";
+import { fetchPipelineSteps } from "@/lib/api";
 import {
+  applyPipelineStepEvent,
   BACKFILL_PIPELINE_STEPS,
   formatEta,
   INGEST_PIPELINE_STEPS,
+  mapApiSteps,
   totalEtaSeconds,
   type PipelineStepDef,
 } from "@/lib/pipeline-steps";
-import type { EnrichBackfillResult, IngestResult } from "@/lib/types";
+import { streamEnrichBackfill, streamIngest } from "@/lib/pipeline-stream";
+import type {
+  EnrichBackfillResult,
+  IngestResult,
+  PipelineStepEvent,
+} from "@/lib/types";
 
 type ActiveAction = "idle" | "ingest" | "backfill";
-
-function advanceSteps(
-  defs: PipelineStepDef[],
-  index: number,
-  detail?: string,
-): ActivityStep[] {
-  return buildSteps(defs, index).map((step, i) =>
-    i === index && detail ? { ...step, detail } : step,
-  );
-}
 
 export function IngestPanel() {
   const router = useRouter();
@@ -43,38 +39,38 @@ export function IngestPanel() {
   const [backfillResult, setBackfillResult] = useState<EnrichBackfillResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
-  const stepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ingestDefs, setIngestDefs] = useState<PipelineStepDef[]>(INGEST_PIPELINE_STEPS);
+  const [backfillDefs, setBackfillDefs] = useState<PipelineStepDef[]>(
+    BACKFILL_PIPELINE_STEPS,
+  );
 
   useEffect(() => {
     void checkApiHealth().then(setApiOnline);
+    void fetchPipelineSteps()
+      .then((config) => {
+        setIngestDefs(mapApiSteps(config.ingest));
+        setBackfillDefs(mapApiSteps(config.backfill));
+      })
+      .catch(() => {
+        /* mantém fallback estático */
+      });
   }, []);
 
-  function clearStepTimer() {
-    if (stepTimerRef.current) {
-      clearTimeout(stepTimerRef.current);
-      stepTimerRef.current = null;
+  function handlePipelineEvent(
+    defs: PipelineStepDef[],
+    event: PipelineStepEvent,
+  ) {
+    if (event.type !== "step") {
+      return;
     }
-  }
 
-  function startStepAnimation(defs: PipelineStepDef[], startIndex = 0) {
-    clearStepTimer();
-    let index = startIndex;
-    setSteps(advanceSteps(defs, index));
+    setSteps(applyPipelineStepEvent(defs, event));
 
-    const scheduleNext = () => {
-      const current = defs[index];
-      const delayMs = Math.max((current?.estimatedSeconds ?? 8) * 1000, 2000);
-
-      stepTimerRef.current = setTimeout(() => {
-        if (index < defs.length - 1) {
-          index += 1;
-          setSteps(advanceSteps(defs, index));
-          scheduleNext();
-        }
-      }, delayMs);
-    };
-
-    scheduleNext();
+    if (event.article_index && event.article_total) {
+      setStatusLine(
+        `Artigo ${event.article_index}/${event.article_total} — acompanhe o agente ativo abaixo.`,
+      );
+    }
   }
 
   async function handleIngest() {
@@ -89,10 +85,14 @@ export function IngestPanel() {
     setIsBusy(true);
     setLogTitle("Atualizando feed com IA");
     setStatusLine(
-      `Pipeline multi-agente — ETA total aproximado ${formatEta(totalEtaSeconds(INGEST_PIPELINE_STEPS))} por artigo novo.`,
+      `Pipeline multi-agente — ETA ~${formatEta(totalEtaSeconds(ingestDefs))} por artigo novo.`,
     );
-    setSteps(advanceSteps(INGEST_PIPELINE_STEPS, 0));
-    startStepAnimation(INGEST_PIPELINE_STEPS);
+    setSteps(
+      ingestDefs.map((def, index) => ({
+        ...def,
+        status: index === 0 ? "active" : "pending",
+      })),
+    );
 
     try {
       const online = await checkApiHealth();
@@ -103,14 +103,13 @@ export function IngestPanel() {
         );
       }
 
-      const stats = await triggerIngest();
-      clearStepTimer();
+      const stats = await streamIngest((event) => {
+        handlePipelineEvent(ingestDefs, event);
+      });
+
       setSteps(
         markAllDone(
-          INGEST_PIPELINE_STEPS.map((def) => ({
-            ...def,
-            status: "pending" as const,
-          })),
+          ingestDefs.map((def) => ({ ...def, status: "pending" as const })),
           `${stats.saved} salvas · ${stats.relevante} relevantes · ${stats.skipped_duplicate} duplicadas ignoradas`,
         ),
       );
@@ -118,7 +117,6 @@ export function IngestPanel() {
       setIngestResult(stats);
       router.refresh();
     } catch (err) {
-      clearStepTimer();
       setStatusLine(null);
       setSteps([
         {
@@ -147,9 +145,14 @@ export function IngestPanel() {
     setIsBusy(true);
     setLogTitle("Traduzindo artigos pendentes");
     setStatusLine(
-      `Aguarde — 3 agentes por artigo (Triador ~50s · Tradutor ~90s · Hype ~45s).`,
+      "Aguarde — 3 agentes por artigo (Triador · Tradutor · Hype).",
     );
-    setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, 0, "Preparando primeiro artigo…"));
+    setSteps(
+      backfillDefs.map((def, index) => ({
+        ...def,
+        status: index === 0 ? "active" : "pending",
+      })),
+    );
 
     try {
       const online = await checkApiHealth();
@@ -164,40 +167,14 @@ export function IngestPanel() {
       let totalErrors = 0;
       let remaining = 1;
       let candidates = 0;
-      let lastResult: EnrichBackfillResult | null = null;
       let rounds = 0;
       const maxRounds = 25;
 
       while (remaining > 0 && rounds < maxRounds) {
-        const articleNum = totalProcessed + totalErrors + 1;
-        const pendingHint =
-          candidates > 0
-            ? `artigo ${articleNum} de ~${candidates}`
-            : `rodada ${rounds + 1}`;
+        const stats = await streamEnrichBackfill(1, (event) => {
+          handlePipelineEvent(backfillDefs, event);
+        });
 
-        setStatusLine(`Processando ${pendingHint}… não feche esta página.`);
-
-        clearStepTimer();
-        let stepIndex = 0;
-        setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, stepIndex, pendingHint));
-
-        const advanceBackfillStep = () => {
-          const current = BACKFILL_PIPELINE_STEPS[stepIndex];
-          const delayMs = Math.max((current?.estimatedSeconds ?? 8) * 1000, 2000);
-          stepTimerRef.current = setTimeout(() => {
-            if (stepIndex < BACKFILL_PIPELINE_STEPS.length - 2) {
-              stepIndex += 1;
-              setSteps(advanceSteps(BACKFILL_PIPELINE_STEPS, stepIndex, pendingHint));
-              advanceBackfillStep();
-            }
-          }, delayMs);
-        };
-        advanceBackfillStep();
-
-        const stats = await enrichBackfill(1);
-        clearStepTimer();
-
-        lastResult = stats;
         if (rounds === 0) {
           candidates = stats.candidates;
         }
@@ -210,10 +187,7 @@ export function IngestPanel() {
         if (stats.processed > 0) {
           setSteps(
             markAllDone(
-              BACKFILL_PIPELINE_STEPS.map((def) => ({
-                ...def,
-                status: "pending" as const,
-              })),
+              backfillDefs.map((def) => ({ ...def, status: "pending" as const })),
               `Artigo ${totalProcessed} concluído · ${remaining} pendente(s)`,
             ),
           );
@@ -227,19 +201,12 @@ export function IngestPanel() {
         }
       }
 
-      const finalResult: EnrichBackfillResult = lastResult
-        ? {
-            ...lastResult,
-            processed: totalProcessed,
-            errors: totalErrors,
-            candidates,
-          }
-        : {
-            processed: 0,
-            errors: 0,
-            candidates: 0,
-            remaining: 0,
-          };
+      const finalResult: EnrichBackfillResult = {
+        processed: totalProcessed,
+        errors: totalErrors,
+        candidates,
+        remaining,
+      };
 
       setBackfillResult(finalResult);
 
@@ -266,7 +233,6 @@ export function IngestPanel() {
 
       router.refresh();
     } catch (err) {
-      clearStepTimer();
       setSteps([
         {
           id: "error",
@@ -333,8 +299,8 @@ export function IngestPanel() {
           <span className="h-4 w-4 animate-spin rounded-full border-2 border-cyan/30 border-t-cyan" />
           <p className="text-xs text-cyan">
             {isBackfilling
-              ? "Tradução em andamento — acompanhe os passos abaixo."
-              : "Atualização do feed em andamento — acompanhe os passos abaixo."}
+              ? "Tradução em andamento — progresso em tempo real abaixo."
+              : "Atualização do feed em andamento — progresso em tempo real abaixo."}
           </p>
         </div>
       ) : null}

@@ -77,13 +77,18 @@ def parse_rss_feed(feed_url: str, source: str = "rss") -> list[RawArticle]:
 
 
 def fetch_rss_feeds(
-    feeds: tuple[tuple[str, str], ...] | None = None,
+    feeds: dict[str, str] | tuple[tuple[str, str], ...] | None = None,
 ) -> list[RawArticle]:
-    feed_list = DEFAULT_RSS_FEEDS if feeds is None else feeds
+    feed_map = DEFAULT_RSS_FEEDS if feeds is None else feeds
     articles: list[RawArticle] = []
     seen_urls: set[str] = set()
 
-    for feed_url, feed_name in feed_list:
+    if isinstance(feed_map, dict):
+        feed_items = feed_map.items()
+    else:
+        feed_items = ((name, url) for url, name in feed_map)
+
+    for feed_name, feed_url in feed_items:
         try:
             batch = parse_rss_feed(feed_url, source=f"rss/{feed_name}")
         except (requests.RequestException, ET.ParseError) as exc:

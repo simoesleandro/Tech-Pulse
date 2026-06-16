@@ -85,3 +85,54 @@ export function formatEta(seconds: number): string {
 export function totalEtaSeconds(steps: PipelineStepDef[]): number {
   return steps.reduce((sum, step) => sum + step.estimatedSeconds, 0);
 }
+
+export function mapApiSteps(
+  steps: Array<{
+    id: string;
+    label: string;
+    estimated_seconds: number;
+    agent?: string | null;
+  }>,
+): PipelineStepDef[] {
+  return steps.map((step) => ({
+    id: step.id,
+    label: step.label,
+    estimatedSeconds: step.estimated_seconds,
+    agent: step.agent,
+  }));
+}
+
+export function applyPipelineStepEvent(
+  defs: PipelineStepDef[],
+  event: Extract<
+    import("@/lib/types").PipelineStepEvent,
+    { type: "step" }
+  >,
+): import("@/components/ActivityLog").ActivityStep[] {
+  const activeIndex = defs.findIndex((def) => def.id === event.step_id);
+  if (activeIndex < 0) {
+    return defs.map((def) => ({ ...def, status: "pending" as const }));
+  }
+
+  return defs.map((def, index) => {
+    let status: "pending" | "active" | "done" = "pending";
+
+    if (event.status === "active") {
+      if (index < activeIndex) {
+        status = "done";
+      } else if (index === activeIndex) {
+        status = "active";
+      }
+    } else {
+      if (index <= activeIndex) {
+        status = "done";
+      }
+    }
+
+    return {
+      ...def,
+      status,
+      detail: index === activeIndex ? event.detail : undefined,
+    };
+  });
+}

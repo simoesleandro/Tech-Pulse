@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Callable
 
 from app.services.hype_backfill import resolve_hype_score
 from app.services.ollama_client import ollama_generate
@@ -148,8 +149,20 @@ async def agente_hype(article: RawArticle, title_pt: str) -> int:
     return hype
 
 
-async def orquestrador_enriquecimento(article: RawArticle) -> EnrichedArticle:
+AgentProgressCallback = Callable[[str, str, str | None], None]
+
+
+async def orquestrador_enriquecimento(
+    article: RawArticle,
+    on_agent_progress: AgentProgressCallback | None = None,
+) -> EnrichedArticle:
+    def emit(step_id: str, status: str, detail: str | None = None) -> None:
+        if on_agent_progress:
+            on_agent_progress(step_id, status, detail)
+
+    emit("triador", "active", article.title[:80])
     relevance = await agente_triador(article)
+    emit("triador", "done", relevance)
 
     if relevance == "LIXO":
         logger.info("[orquestrador] %s barrado no triador — pulando tradutor/hype", article.url)
@@ -160,8 +173,13 @@ async def orquestrador_enriquecimento(article: RawArticle) -> EnrichedArticle:
             hype_score=0,
         )
 
+    emit("tradutor", "active", article.title[:80])
     title_pt, desc_pt = await agente_tradutor(article)
+    emit("tradutor", "done", title_pt[:80])
+
+    emit("hype", "active", title_pt[:80])
     hype_score = await agente_hype(article, title_pt)
+    emit("hype", "done", f"{hype_score} estrelas")
 
     return EnrichedArticle(
         ai_relevance="RELEVANTE",
@@ -171,5 +189,8 @@ async def orquestrador_enriquecimento(article: RawArticle) -> EnrichedArticle:
     )
 
 
-def enrich_article_sync(article: RawArticle) -> EnrichedArticle:
-    return asyncio.run(orquestrador_enriquecimento(article))
+def enrich_article_sync(
+    article: RawArticle,
+    on_agent_progress: AgentProgressCallback | None = None,
+) -> EnrichedArticle:
+    return asyncio.run(orquestrador_enriquecimento(article, on_agent_progress))

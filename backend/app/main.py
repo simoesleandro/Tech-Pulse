@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 import asyncio
+import json
 import logging
 import os
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -43,6 +45,47 @@ logger = logging.getLogger(__name__)
 INGEST_INTERVAL_SECONDS = int(os.getenv("INGEST_INTERVAL_SECONDS", "300"))
 INGEST_ON_STARTUP = os.getenv("INGEST_ON_STARTUP", "false").lower() == "true"
 INGEST_BACKGROUND = os.getenv("INGEST_BACKGROUND", "false").lower() == "true"
+
+
+def _stream_sync_job(job):
+    async def generate():
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def emit(event: dict) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        async def run_job() -> None:
+            try:
+                result = await asyncio.to_thread(job, emit)
+                await queue.put({"type": "complete", "result": result})
+            except Exception as exc:
+                logger.exception("Streaming job failed")
+                await queue.put({"type": "error", "message": str(exc)})
+
+        task = asyncio.create_task(run_job())
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event.get("type") in ("complete", "error"):
+                    break
+            except asyncio.TimeoutError:
+                if task.done() and queue.empty():
+                    break
+
+        await task
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def _ingest_loop() -> None:
@@ -390,6 +433,14 @@ async def trigger_ingest(db: Session = Depends(get_db)):
     return await asyncio.to_thread(run_ingest, db)
 
 
+@app.post("/api/ingest/stream")
+async def trigger_ingest_stream(db: Session = Depends(get_db)):
+    def job(emit):
+        return run_ingest(db, on_progress=emit)
+
+    return _stream_sync_job(job)
+
+
 @app.post("/api/seed", response_model=SeedResult)
 async def seed_demo(db: Session = Depends(get_db)):
     if os.getenv("ALLOW_SEED", "true").lower() != "true":
@@ -403,3 +454,14 @@ async def enrich_backfill(
     db: Session = Depends(get_db),
 ):
     return await asyncio.to_thread(enrich_missing_items, db, limit)
+
+
+@app.post("/api/enrich-backfill/stream")
+async def enrich_backfill_stream(
+    limit: int = Query(default=1, ge=1, le=5),
+    db: Session = Depends(get_db),
+):
+    def job(emit):
+        return enrich_missing_items(db, limit, on_progress=emit)
+
+    return _stream_sync_job(job)
