@@ -5,22 +5,29 @@ import os
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import Base, SessionLocal, engine, get_db
-from app.models import NewsItem, migrate_sqlite_schema
+from app.models import NewsItem, TopicFolder, migrate_sqlite_schema
 from app.schemas import (
+    BulkNewsDelete,
+    BulkNewsResult,
+    BulkNewsUpdate,
     EnrichBackfillResult,
     HealthResponse,
     IngestResult,
     NewsItemBookmarkUpdate,
     NewsItemCreate,
+    NewsItemFolderUpdate,
     NewsItemReadUpdate,
     NewsItemResponse,
     SeedResult,
+    TopicFolderCreate,
+    TopicFolderResponse,
 )
+from app.services.hype_backfill import backfill_missing_hype
 from app.services.ingest import enrich_missing_items, run_ingest
 from app.services.seed import seed_demo_articles
 
@@ -55,10 +62,24 @@ def _run_startup_ingest() -> None:
         db.close()
 
 
+def _run_hype_backfill() -> None:
+    db = SessionLocal()
+    try:
+        updated = backfill_missing_hype(db)
+        if updated:
+            logger.info("Hype backfill updated %s items on startup", updated)
+    except Exception:
+        logger.exception("Startup hype backfill failed")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_sqlite_schema()
+
+    asyncio.create_task(asyncio.to_thread(_run_hype_backfill))
 
     if INGEST_ON_STARTUP:
         await asyncio.to_thread(_run_startup_ingest)
@@ -88,6 +109,24 @@ app.add_middleware(
 )
 
 
+def _news_to_response(item: NewsItem) -> NewsItemResponse:
+    return NewsItemResponse(
+        id=item.id,
+        title=item.title,
+        title_original=item.title_original,
+        description=item.description,
+        url=item.url,
+        source=item.source,
+        ai_relevance=item.ai_relevance,
+        hype_score=item.hype_score,
+        is_read=item.is_read,
+        is_bookmarked=item.is_bookmarked,
+        folder_id=item.folder_id,
+        folder_name=item.folder.name if item.folder else None,
+        created_at=item.created_at,
+    )
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def health_check():
     return HealthResponse(status="ok", service="techpulse-api")
@@ -98,9 +137,10 @@ def list_news(
     is_read: bool | None = Query(default=None),
     is_bookmarked: bool | None = Query(default=None),
     ai_relevance: str | None = Query(default=None),
+    folder_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    query = select(NewsItem)
+    query = select(NewsItem).options(joinedload(NewsItem.folder))
 
     if is_read is not None:
         query = query.where(NewsItem.is_read == is_read)
@@ -108,9 +148,71 @@ def list_news(
         query = query.where(NewsItem.is_bookmarked == is_bookmarked)
     if ai_relevance is not None:
         query = query.where(NewsItem.ai_relevance == ai_relevance)
+    if folder_id is not None:
+        query = query.where(NewsItem.folder_id == folder_id)
 
     query = query.order_by(NewsItem.created_at.desc())
-    return db.scalars(query).all()
+    items = db.scalars(query).all()
+    return [_news_to_response(item) for item in items]
+
+
+@app.get("/api/folders", response_model=list[TopicFolderResponse])
+def list_folders(db: Session = Depends(get_db)):
+    folders = db.scalars(select(TopicFolder).order_by(TopicFolder.name)).all()
+    counts = dict(
+        db.execute(
+            select(NewsItem.folder_id, func.count())
+            .where(NewsItem.folder_id.is_not(None))
+            .group_by(NewsItem.folder_id)
+        ).all()
+    )
+
+    return [
+        TopicFolderResponse(
+            id=folder.id,
+            name=folder.name,
+            item_count=counts.get(folder.id, 0),
+            created_at=folder.created_at,
+        )
+        for folder in folders
+    ]
+
+
+@app.post("/api/folders", response_model=TopicFolderResponse, status_code=201)
+def create_folder(payload: TopicFolderCreate, db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nome da pasta é obrigatório")
+
+    folder = TopicFolder(name=name)
+    db.add(folder)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Já existe uma pasta com esse nome")
+    db.refresh(folder)
+    return TopicFolderResponse(
+        id=folder.id,
+        name=folder.name,
+        item_count=0,
+        created_at=folder.created_at,
+    )
+
+
+@app.delete("/api/folders/{folder_id}", response_model=BulkNewsResult)
+def delete_folder(folder_id: int, db: Session = Depends(get_db)):
+    folder = db.get(TopicFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Pasta não encontrada")
+
+    items = db.scalars(select(NewsItem).where(NewsItem.folder_id == folder_id)).all()
+    for item in items:
+        item.folder_id = None
+
+    db.delete(folder)
+    db.commit()
+    return BulkNewsResult(affected=len(items))
 
 
 @app.post("/api/news", response_model=NewsItemResponse, status_code=201)
@@ -141,8 +243,12 @@ def update_read_status(
 
     db_item.is_read = payload.is_read
     db.commit()
-    db.refresh(db_item)
-    return db_item
+    db_item = db.scalar(
+        select(NewsItem)
+        .options(joinedload(NewsItem.folder))
+        .where(NewsItem.id == item_id)
+    )
+    return _news_to_response(db_item)
 
 
 @app.patch("/api/news/{item_id}/bookmark", response_model=NewsItemResponse)
@@ -156,23 +262,123 @@ def update_bookmark_status(
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
 
     db_item.is_bookmarked = payload.is_bookmarked
+    if not payload.is_bookmarked:
+        db_item.folder_id = None
     db.commit()
-    db.refresh(db_item)
-    return db_item
+    db_item = db.scalar(
+        select(NewsItem)
+        .options(joinedload(NewsItem.folder))
+        .where(NewsItem.id == item_id)
+    )
+    return _news_to_response(db_item)
+
+
+@app.patch("/api/news/{item_id}/folder", response_model=NewsItemResponse)
+def update_folder(
+    item_id: int,
+    payload: NewsItemFolderUpdate,
+    db: Session = Depends(get_db),
+):
+    db_item = db.get(NewsItem, item_id)
+    if db_item is None:
+        raise HTTPException(status_code=404, detail="Notícia não encontrada")
+
+    if payload.folder_id is not None:
+        folder = db.get(TopicFolder, payload.folder_id)
+        if folder is None:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada")
+
+    db_item.folder_id = payload.folder_id
+    if payload.folder_id is not None:
+        db_item.is_bookmarked = True
+
+    db.commit()
+    db_item = db.scalar(
+        select(NewsItem)
+        .options(joinedload(NewsItem.folder))
+        .where(NewsItem.id == item_id)
+    )
+    return _news_to_response(db_item)
+
+
+@app.patch("/api/news/bulk", response_model=BulkNewsResult)
+def bulk_update_news(payload: BulkNewsUpdate, db: Session = Depends(get_db)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Nenhum item selecionado")
+    if (
+        payload.is_read is None
+        and payload.is_bookmarked is None
+        and payload.folder_id is None
+        and not payload.clear_folder
+    ):
+        raise HTTPException(status_code=400, detail="Nenhuma ação informada")
+
+    if payload.folder_id is not None:
+        folder = db.get(TopicFolder, payload.folder_id)
+        if folder is None:
+            raise HTTPException(status_code=404, detail="Pasta não encontrada")
+
+    items = db.scalars(select(NewsItem).where(NewsItem.id.in_(payload.ids))).all()
+    if not items:
+        raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
+
+    for item in items:
+        if payload.is_read is not None:
+            item.is_read = payload.is_read
+        if payload.is_bookmarked is not None:
+            item.is_bookmarked = payload.is_bookmarked
+        if payload.clear_folder:
+            item.folder_id = None
+        elif payload.folder_id is not None:
+            item.folder_id = payload.folder_id
+            item.is_bookmarked = True
+
+    db.commit()
+    return BulkNewsResult(affected=len(items))
+
+
+@app.delete("/api/news/bulk", response_model=BulkNewsResult)
+def bulk_delete_news(payload: BulkNewsDelete, db: Session = Depends(get_db)):
+    if not payload.ids:
+        raise HTTPException(status_code=400, detail="Nenhum item selecionado")
+
+    items = db.scalars(select(NewsItem).where(NewsItem.id.in_(payload.ids))).all()
+    if not items:
+        raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
+
+    for item in items:
+        db.delete(item)
+
+    db.commit()
+    return BulkNewsResult(affected=len(items))
+
+
+@app.delete("/api/news/{item_id}", response_model=BulkNewsResult)
+def delete_news(item_id: int, db: Session = Depends(get_db)):
+    db_item = db.get(NewsItem, item_id)
+    if db_item is None:
+        raise HTTPException(status_code=404, detail="Notícia não encontrada")
+
+    db.delete(db_item)
+    db.commit()
+    return BulkNewsResult(affected=1)
 
 
 @app.post("/api/ingest", response_model=IngestResult)
-def trigger_ingest(db: Session = Depends(get_db)):
-    return run_ingest(db)
+async def trigger_ingest(db: Session = Depends(get_db)):
+    return await asyncio.to_thread(run_ingest, db)
 
 
 @app.post("/api/seed", response_model=SeedResult)
-def seed_demo(db: Session = Depends(get_db)):
+async def seed_demo(db: Session = Depends(get_db)):
     if os.getenv("ALLOW_SEED", "true").lower() != "true":
         raise HTTPException(status_code=403, detail="Endpoint de seed desabilitado")
-    return seed_demo_articles(db)
+    return await asyncio.to_thread(seed_demo_articles, db)
 
 
 @app.post("/api/enrich-backfill", response_model=EnrichBackfillResult)
-def enrich_backfill(db: Session = Depends(get_db)):
-    return enrich_missing_items(db)
+async def enrich_backfill(
+    limit: int = Query(default=1, ge=1, le=5),
+    db: Session = Depends(get_db),
+):
+    return await asyncio.to_thread(enrich_missing_items, db, limit)

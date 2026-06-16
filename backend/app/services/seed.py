@@ -12,6 +12,7 @@ DEMO_ARTICLES = [
         "source": "dev.to",
         "ai_relevance": "RELEVANTE",
         "hype_score": 4,
+        "is_enriched": True,
     },
     {
         "title": "Estratégias de indexação no SQLite para cargas intensas de leitura",
@@ -21,6 +22,7 @@ DEMO_ARTICLES = [
         "source": "dev.to",
         "ai_relevance": "RELEVANTE",
         "hype_score": 3,
+        "is_enriched": True,
     },
     {
         "title": "Hooks de lifespan do FastAPI em produção",
@@ -30,6 +32,7 @@ DEMO_ARTICLES = [
         "source": "github_trends",
         "ai_relevance": "RELEVANTE",
         "hype_score": 5,
+        "is_enriched": True,
     },
     {
         "title": "CEO de startup captura US$ 50M em Série A",
@@ -39,6 +42,7 @@ DEMO_ARTICLES = [
         "source": "reddit",
         "ai_relevance": "LIXO",
         "hype_score": 2,
+        "is_enriched": True,
     },
 ]
 

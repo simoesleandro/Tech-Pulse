@@ -9,6 +9,15 @@ export interface NewsItem {
   hype_score: number;
   is_read: boolean;
   is_bookmarked: boolean;
+  folder_id: number | null;
+  folder_name: string | null;
+  created_at: string;
+}
+
+export interface TopicFolder {
+  id: number;
+  name: string;
+  item_count: number;
   created_at: string;
 }
 
@@ -16,6 +25,7 @@ export interface NewsFilters {
   is_read?: boolean;
   is_bookmarked?: boolean;
   ai_relevance?: string;
+  folder_id?: number;
 }
 
 export type FeedView = "queue" | "read" | "saved";
@@ -40,4 +50,18 @@ export interface EnrichBackfillResult {
   processed: number;
   errors: number;
   candidates: number;
+  remaining: number;
+  error_messages?: string[];
+}
+
+export interface BulkNewsResult {
+  affected: number;
+}
+
+export interface BulkNewsUpdatePayload {
+  ids: number[];
+  is_read?: boolean;
+  is_bookmarked?: boolean;
+  folder_id?: number | null;
+  clear_folder?: boolean;
 }

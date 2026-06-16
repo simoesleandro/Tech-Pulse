@@ -47,11 +47,13 @@ def _mock_enrich(article: RawArticle) -> EnrichedArticle:
             ai_relevance="RELEVANTE",
             title_pt="Construindo um orquestrador de agentes LLM com Python",
             description_pt="Artigo sobre orquestração de agentes de IA com Python.",
+            hype_score=4,
         )
     return EnrichedArticle(
         ai_relevance="LIXO",
         title_pt="CEO captura US$ 50M em Série A",
         description_pt="Notícia corporativa sem foco técnico.",
+        hype_score=1,
     )
 
 

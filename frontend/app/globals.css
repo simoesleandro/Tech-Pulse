@@ -11,6 +11,22 @@
   --cyber-cyan-dim: #0891b2;
   --emerald: #10b981;
   --crimson: #ef4444;
+
+  --source-devto: #a78bfa;
+  --source-devto-bg: rgba(167, 139, 250, 0.1);
+  --source-devto-border: rgba(167, 139, 250, 0.35);
+
+  --source-reddit: #ff5700;
+  --source-reddit-bg: rgba(255, 87, 0, 0.1);
+  --source-reddit-border: rgba(255, 87, 0, 0.4);
+
+  --source-github: #e3b341;
+  --source-github-bg: rgba(227, 179, 65, 0.1);
+  --source-github-border: rgba(227, 179, 65, 0.4);
+
+  --source-default: #06b6d4;
+  --source-default-bg: rgba(6, 182, 212, 0.08);
+  --source-default-border: rgba(6, 182, 212, 0.35);
 }
 
 @theme inline {
@@ -60,5 +76,225 @@ body {
 
 .feed-item {
   content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
+  contain-intrinsic-size: auto 220px;
+}
+
+.card-hover {
+  cursor: default;
+}
+
+.card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.card-source-devto.card-hover:hover {
+  border-color: color-mix(in srgb, var(--source-devto) 65%, white);
+  box-shadow:
+    0 12px 30px rgba(167, 139, 250, 0.18),
+    0 0 0 1px color-mix(in srgb, var(--source-devto) 40%, transparent);
+}
+
+.card-source-reddit.card-hover:hover {
+  border-color: color-mix(in srgb, var(--source-reddit) 70%, white);
+  box-shadow:
+    0 12px 30px rgba(255, 87, 0, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--source-reddit) 45%, transparent);
+}
+
+.card-source-github.card-hover:hover {
+  border-color: color-mix(in srgb, var(--source-github) 70%, white);
+  box-shadow:
+    0 12px 30px rgba(227, 179, 65, 0.2),
+    0 0 0 1px color-mix(in srgb, var(--source-github) 45%, transparent);
+}
+
+.card-source-default.card-hover:hover {
+  border-color: color-mix(in srgb, var(--source-default) 65%, white);
+  box-shadow:
+    0 12px 30px rgba(6, 182, 212, 0.18),
+    0 0 0 1px color-mix(in srgb, var(--source-default) 40%, transparent);
+}
+
+.btn-interactive {
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.btn-interactive:focus-visible {
+  outline: 2px solid var(--cyber-cyan);
+  outline-offset: 2px;
+}
+
+.btn-interactive:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  border-color: color-mix(in srgb, var(--cyber-cyan) 45%, var(--border-color));
+  color: var(--text-main);
+}
+
+.btn-interactive:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn-interactive:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-interactive.btn-primary:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--cyber-cyan) 22%, transparent);
+  border-color: var(--cyber-cyan);
+  color: var(--cyber-cyan);
+  box-shadow: 0 6px 18px rgba(6, 182, 212, 0.25);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--crimson);
+  color: var(--crimson);
+  background-color: rgba(239, 68, 68, 0.1);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.2);
+}
+
+.link-interactive {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.link-interactive:hover {
+  opacity: 0.9;
+  filter: brightness(1.15);
+}
+
+.nav-link-interactive {
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.nav-link-interactive:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  padding: 0.2rem 0.55rem;
+  font-family: var(--font-jetbrains), monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.badge-source-devto {
+  color: var(--source-devto);
+  background: var(--source-devto-bg);
+  border: 1px solid var(--source-devto-border);
+}
+
+.badge-source-reddit {
+  color: var(--source-reddit);
+  background: var(--source-reddit-bg);
+  border: 1px solid var(--source-reddit-border);
+}
+
+.badge-source-github {
+  color: var(--source-github);
+  background: var(--source-github-bg);
+  border: 1px solid var(--source-github-border);
+}
+
+.badge-source-default {
+  color: var(--source-default);
+  background: var(--source-default-bg);
+  border: 1px solid var(--source-default-border);
+}
+
+.card-source-devto {
+  border-color: var(--source-devto-border);
+  background: linear-gradient(145deg, var(--source-devto-bg), var(--bg-card));
+}
+
+.card-source-reddit {
+  border-color: var(--source-reddit-border);
+  background: linear-gradient(145deg, var(--source-reddit-bg), var(--bg-card));
+}
+
+.card-source-github {
+  border-color: var(--source-github-border);
+  background: linear-gradient(145deg, var(--source-github-bg), var(--bg-card));
+}
+
+.card-source-default {
+  border-color: var(--source-default-border);
+  background: linear-gradient(145deg, var(--source-default-bg), var(--bg-card));
+}
+
+.card-source-devto .source-trace {
+  background: var(--source-devto);
+}
+
+.card-source-reddit .source-trace {
+  background: var(--source-reddit);
+}
+
+.card-source-github .source-trace {
+  background: var(--source-github);
+}
+
+.card-source-default .source-trace {
+  background: var(--source-default);
+}
+
+.field-label-devto {
+  color: color-mix(in srgb, var(--source-devto) 85%, white);
+}
+
+.field-label-reddit {
+  color: color-mix(in srgb, var(--source-reddit) 85%, white);
+}
+
+.field-label-github {
+  color: color-mix(in srgb, var(--source-github) 85%, white);
+}
+
+.field-label-default {
+  color: color-mix(in srgb, var(--source-default) 85%, white);
+}
+
+.link-source-devto {
+  color: var(--source-devto);
+  outline-color: var(--source-devto);
+}
+
+.link-source-reddit {
+  color: var(--source-reddit);
+  outline-color: var(--source-reddit);
+}
+
+.link-source-github {
+  color: var(--source-github);
+  outline-color: var(--source-github);
+}
+
+.link-source-default {
+  color: var(--source-default);
+  outline-color: var(--source-default);
 }

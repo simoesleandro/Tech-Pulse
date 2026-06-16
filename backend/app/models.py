@@ -1,9 +1,21 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, engine
+
+
+class TopicFolder(Base):
+    __tablename__ = "topic_folders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    items: Mapped[list["NewsItem"]] = relationship(back_populates="folder")
 
 
 class NewsItem(Base):
@@ -17,13 +29,23 @@ class NewsItem(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     ai_relevance: Mapped[str] = mapped_column(String, nullable=False)
     hype_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    engagement_reactions: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    engagement_comments: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    engagement_stars: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    engagement_ups: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    is_enriched: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_bookmarked: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0"
     )
+    folder_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("topic_folders.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    folder: Mapped["TopicFolder | None"] = relationship(back_populates="items")
 
     __table_args__ = (Index("idx_news_unread", "is_read", "ai_relevance"),)
 
@@ -53,11 +75,43 @@ def migrate_sqlite_schema() -> None:
             conn.execute(
                 text("ALTER TABLE news_items ADD COLUMN hype_score INTEGER NOT NULL DEFAULT 0")
             )
+        if "is_enriched" not in columns:
+            conn.execute(
+                text("ALTER TABLE news_items ADD COLUMN is_enriched INTEGER NOT NULL DEFAULT 0")
+            )
+        if "engagement_reactions" not in columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE news_items ADD COLUMN engagement_reactions INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        if "engagement_comments" not in columns:
+            conn.execute(
+                text(
+                    "ALTER TABLE news_items ADD COLUMN engagement_comments INTEGER NOT NULL DEFAULT 0"
+                )
+            )
+        if "engagement_stars" not in columns:
+            conn.execute(
+                text("ALTER TABLE news_items ADD COLUMN engagement_stars INTEGER NOT NULL DEFAULT 0")
+            )
+        if "engagement_ups" not in columns:
+            conn.execute(
+                text("ALTER TABLE news_items ADD COLUMN engagement_ups INTEGER NOT NULL DEFAULT 0")
+            )
+        if "folder_id" not in columns:
+            conn.execute(text("ALTER TABLE news_items ADD COLUMN folder_id INTEGER"))
 
         conn.execute(
             text(
                 "UPDATE news_items SET title_original = title "
                 "WHERE title_original IS NULL OR title_original = ''"
+            )
+        )
+        conn.execute(
+            text(
+                "UPDATE news_items SET is_enriched = 1 "
+                "WHERE description != '' AND title != title_original"
             )
         )
         conn.commit()

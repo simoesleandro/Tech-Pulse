@@ -108,3 +108,64 @@ def test_patch_not_found_returns_404(client: TestClient):
     response = client.patch("/api/news/9999/read", json={"is_read": True})
     assert response.status_code == 404
     assert response.json()["detail"] == "Notícia não encontrada"
+
+
+def test_bulk_update_and_delete(client: TestClient):
+    first = client.post("/api/news", json=VALID_PAYLOAD).json()["id"]
+    second_payload = {**VALID_PAYLOAD, "url": "https://example.com/second-item"}
+    second = client.post("/api/news", json=second_payload).json()["id"]
+
+    bulk_read = client.patch(
+        "/api/news/bulk",
+        json={"ids": [first, second], "is_read": True},
+    )
+    assert bulk_read.status_code == 200
+    assert bulk_read.json()["affected"] == 2
+
+    bulk_bookmark = client.patch(
+        "/api/news/bulk",
+        json={"ids": [first], "is_bookmarked": True},
+    )
+    assert bulk_bookmark.status_code == 200
+    assert bulk_bookmark.json()["affected"] == 1
+
+    bulk_delete = client.request(
+        "DELETE",
+        "/api/news/bulk",
+        json={"ids": [first, second]},
+    )
+    assert bulk_delete.status_code == 200
+    assert bulk_delete.json()["affected"] == 2
+
+
+def test_delete_news_item(client: TestClient):
+    create_response = client.post("/api/news", json=VALID_PAYLOAD)
+    item_id = create_response.json()["id"]
+
+    delete_response = client.delete(f"/api/news/{item_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["affected"] == 1
+
+
+def test_folders_and_assign(client: TestClient):
+    folder_response = client.post("/api/folders", json={"name": "Inteligência Artificial"})
+    assert folder_response.status_code == 201
+    folder_id = folder_response.json()["id"]
+
+    create_response = client.post("/api/news", json=VALID_PAYLOAD)
+    item_id = create_response.json()["id"]
+
+    assign_response = client.patch(
+        f"/api/news/{item_id}/folder",
+        json={"folder_id": folder_id},
+    )
+    assert assign_response.status_code == 200
+    body = assign_response.json()
+    assert body["folder_id"] == folder_id
+    assert body["is_bookmarked"] is True
+
+    filtered = client.get(
+        "/api/news",
+        params={"folder_id": folder_id, "is_bookmarked": True},
+    )
+    assert len(filtered.json()) == 1

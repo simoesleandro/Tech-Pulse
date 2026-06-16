@@ -18,3 +18,4 @@ class EnrichedArticle:
     ai_relevance: str
     title_pt: str
     description_pt: str
+    hype_score: int

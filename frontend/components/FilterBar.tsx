@@ -31,10 +31,10 @@ export function FilterBar() {
           <Link
             key={view.id}
             href={href}
-            className={`rounded-md border px-3 py-1.5 font-mono text-xs uppercase tracking-wide transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
+            className={`nav-link-interactive rounded-md border px-3 py-1.5 font-mono text-xs uppercase tracking-wide focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan ${
               isActive
-                ? "border-cyan bg-cyan/10 text-cyan"
-                : "border-border text-muted hover:border-cyan/40 hover:text-foreground"
+                ? "border-cyan bg-cyan/10 text-cyan shadow-[0_4px_14px_rgba(6,182,212,0.2)]"
+                : "border-border text-muted hover:border-cyan/50 hover:bg-cyan/5 hover:text-cyan"
             }`}
             aria-current={isActive ? "page" : undefined}
           >

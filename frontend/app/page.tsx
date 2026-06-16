@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 
 import { FilterBar } from "@/components/FilterBar";
+import { FolderPanel } from "@/components/FolderPanel";
 import { Header } from "@/components/Header";
 import { IngestPanel } from "@/components/IngestPanel";
 import { NewsFeed } from "@/components/NewsFeed";
-import { fetchNews, getFeedItems } from "@/lib/api";
-import type { FeedView, NewsItem } from "@/lib/types";
+import { fetchFolders, fetchNews, getFeedItems } from "@/lib/api";
+import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
 
 function resolveView(raw?: string): FeedView {
   if (raw === "read" || raw === "saved") {
@@ -27,6 +28,15 @@ function FilterBarFallback() {
   );
 }
 
+function FolderPanelFallback() {
+  return (
+    <div
+      className="h-24 animate-pulse rounded-lg border border-border bg-surface"
+      aria-hidden="true"
+    />
+  );
+}
+
 function FeedSkeleton() {
   return (
     <div className="flex flex-col gap-2" aria-hidden="true">
@@ -43,25 +53,39 @@ function FeedSkeleton() {
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{ view?: string; folder?: string }>;
 }) {
   const params = await searchParams;
   const view = resolveView(params.view);
+  const folderId = params.folder ? Number(params.folder) : undefined;
 
   let unreadCount = 0;
   let items: NewsItem[] = [];
+  let folders: TopicFolder[] = [];
   let apiError: string | null = null;
+  let foldersError: string | null = null;
 
   try {
-    const [unreadItems, feedItems] = await Promise.all([
-      fetchNews({ is_read: false, ai_relevance: "RELEVANTE" }),
-      getFeedItems(view),
-    ]);
+    const unreadItems = await fetchNews({ is_read: false, ai_relevance: "RELEVANTE" });
     unreadCount = unreadItems.length;
-    items = feedItems;
   } catch {
     apiError =
       "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
+  }
+
+  if (!apiError) {
+    try {
+      items = await getFeedItems(view, folderId);
+    } catch {
+      apiError =
+        "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
+    }
+  }
+
+  try {
+    folders = await fetchFolders();
+  } catch {
+    foldersError = "Não foi possível carregar as pastas. Reinicie o backend com o código mais recente.";
   }
 
   return (
@@ -81,15 +105,28 @@ export default async function Home({
             </div>
           ) : null}
 
+          {foldersError ? (
+            <div
+              className="rounded-lg border border-crimson/30 bg-crimson/5 px-4 py-2 text-xs text-crimson"
+              role="alert"
+            >
+              {foldersError}
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-4">
             <Suspense fallback={<FilterBarFallback />}>
               <FilterBar />
             </Suspense>
 
+            <Suspense fallback={<FolderPanelFallback />}>
+              <FolderPanel folders={folders} />
+            </Suspense>
+
             {apiError ? (
               <FeedSkeleton />
             ) : (
-              <NewsFeed initialItems={items} view={view} />
+              <NewsFeed initialItems={items} view={view} folders={folders} />
             )}
           </div>
         </div>

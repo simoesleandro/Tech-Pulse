@@ -22,6 +22,25 @@ class NewsItemResponse(NewsItemBase):
     title_original: str
     is_read: bool
     is_bookmarked: bool
+    folder_id: int | None = None
+    folder_name: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NewsItemFolderUpdate(BaseModel):
+    folder_id: int | None = None
+
+
+class TopicFolderCreate(BaseModel):
+    name: str
+
+
+class TopicFolderResponse(BaseModel):
+    id: int
+    name: str
+    item_count: int = 0
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +74,24 @@ class EnrichBackfillResult(BaseModel):
     processed: int
     errors: int
     candidates: int
+    remaining: int
+    error_messages: list[str] = []
+
+
+class BulkNewsUpdate(BaseModel):
+    ids: list[int]
+    is_read: bool | None = None
+    is_bookmarked: bool | None = None
+    folder_id: int | None = None
+    clear_folder: bool = False
+
+
+class BulkNewsDelete(BaseModel):
+    ids: list[int]
+
+
+class BulkNewsResult(BaseModel):
+    affected: int
 
 
 class HealthResponse(BaseModel):

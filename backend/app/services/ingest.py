@@ -2,12 +2,17 @@ import functools
 import logging
 from collections.abc import Callable
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import NewsItem
-from app.services.hype import compute_hype_score
+from app.services.hype_backfill import (
+    apply_engagement_from_article,
+    item_to_raw_article,
+    refresh_item_hype,
+    resolve_hype_score,
+)
 from app.services.ollama import enrich_article
 from app.services.scrapers import fetch_devto, fetch_github_trends, fetch_reddit
 from app.services.scrapers.base import RawArticle
@@ -46,7 +51,24 @@ def _fetch_all_articles(fetchers: list[Fetcher]) -> tuple[list[RawArticle], list
     return articles, errors
 
 
+def _count_pending(db: Session) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(NewsItem)
+            .where(
+                or_(
+                    NewsItem.is_enriched.is_(False),
+                    NewsItem.hype_score == 0,
+                )
+            )
+        )
+        or 0
+    )
+
+
 def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
+    hype_score = resolve_hype_score(enriched.hype_score, article)
     db_item = NewsItem(
         title=enriched.title_pt,
         title_original=article.title,
@@ -54,7 +76,12 @@ def _persist_article(db: Session, article: RawArticle, enriched) -> NewsItem:
         url=article.url,
         source=article.source,
         ai_relevance=enriched.ai_relevance,
-        hype_score=compute_hype_score(article),
+        hype_score=hype_score,
+        engagement_reactions=article.positive_reactions,
+        engagement_comments=article.comments_count,
+        engagement_stars=article.stars,
+        engagement_ups=article.ups,
+        is_enriched=True,
     )
     db.add(db_item)
     db.commit()
@@ -108,32 +135,69 @@ def run_ingest(
     return stats
 
 
-def enrich_missing_items(db: Session) -> dict[str, int]:
-    items = db.scalars(select(NewsItem).where(NewsItem.description == "")).all()
+def enrich_missing_items(db: Session, limit: int = 1) -> dict[str, int]:
+    pending_before = _count_pending(db)
+    items = db.scalars(
+        select(NewsItem)
+        .where(
+            or_(
+                NewsItem.is_enriched.is_(False),
+                NewsItem.hype_score == 0,
+            )
+        )
+        .order_by(NewsItem.created_at.desc())
+        .limit(limit)
+    ).all()
 
     processed = 0
     errors = 0
+    error_messages: list[str] = []
 
     for item in items:
         try:
-            raw = RawArticle(
-                title=item.title_original or item.title,
-                url=item.url,
-                source=item.source,
-                description_snippet=item.description,
-            )
+            if item.is_enriched and item.hype_score == 0:
+                refresh_item_hype(item)
+                db.commit()
+                processed += 1
+                continue
+
+            raw = item_to_raw_article(item)
+            if not raw.description_snippet and item.description:
+                raw = RawArticle(
+                    title=raw.title,
+                    url=raw.url,
+                    source=raw.source,
+                    description_snippet=item.description,
+                    positive_reactions=item.engagement_reactions,
+                    comments_count=item.engagement_comments,
+                    stars=item.engagement_stars,
+                    ups=item.engagement_ups,
+                )
+
             enriched = enrich_article(raw)
             item.title = enriched.title_pt
             item.title_original = raw.title
             item.description = enriched.description_pt
             item.ai_relevance = enriched.ai_relevance
+            apply_engagement_from_article(item, raw)
+            item.hype_score = resolve_hype_score(enriched.hype_score, raw)
             if item.hype_score == 0:
-                item.hype_score = compute_hype_score(raw)
+                refresh_item_hype(item)
+            item.is_enriched = True
             db.commit()
             processed += 1
         except Exception as exc:
             db.rollback()
             errors += 1
+            error_messages.append(f"{item.url}: {exc}")
             logger.warning("Backfill failed for %s: %s", item.url, exc)
 
-    return {"processed": processed, "errors": errors, "candidates": len(items)}
+    remaining = _count_pending(db)
+
+    return {
+        "processed": processed,
+        "errors": errors,
+        "candidates": pending_before,
+        "remaining": remaining,
+        "error_messages": error_messages,
+    }

@@ -1,8 +1,17 @@
 import { cache } from "react";
 
-import type { EnrichBackfillResult, FeedView, IngestResult, NewsFilters, NewsItem, SeedResult } from "@/lib/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { apiJson } from "@/lib/client-api";
+import type {
+  BulkNewsResult,
+  BulkNewsUpdatePayload,
+  EnrichBackfillResult,
+  FeedView,
+  IngestResult,
+  NewsFilters,
+  NewsItem,
+  SeedResult,
+  TopicFolder,
+} from "@/lib/types";
 
 function buildNewsUrl(filters?: NewsFilters): string {
   const params = new URLSearchParams();
@@ -15,100 +24,130 @@ function buildNewsUrl(filters?: NewsFilters): string {
   if (filters?.ai_relevance) {
     params.set("ai_relevance", filters.ai_relevance);
   }
+  if (filters?.folder_id !== undefined) {
+    params.set("folder_id", String(filters.folder_id));
+  }
   const query = params.toString();
-  return `${API_BASE}/api/news${query ? `?${query}` : ""}`;
+  return `/api/news${query ? `?${query}` : ""}`;
 }
 
 export async function fetchNews(filters?: NewsFilters): Promise<NewsItem[]> {
-  const response = await fetch(buildNewsUrl(filters), {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Não foi possível carregar o feed.");
-  }
-
-  return response.json();
+  return apiJson<NewsItem[]>(buildNewsUrl(filters));
 }
 
-export const getFeedItems = cache(async (view: FeedView): Promise<NewsItem[]> => {
+export const getFeedItems = cache(async (view: FeedView, folderId?: number): Promise<NewsItem[]> => {
   if (view === "read") {
     return fetchNews({ is_read: true, ai_relevance: "RELEVANTE" });
   }
 
   if (view === "saved") {
-    return fetchNews({ is_bookmarked: true, ai_relevance: "RELEVANTE" });
+    const filters: NewsFilters = { is_bookmarked: true, ai_relevance: "RELEVANTE" };
+    if (folderId !== undefined) {
+      filters.folder_id = folderId;
+    }
+    return fetchNews(filters);
   }
 
   return fetchNews({ is_read: false, ai_relevance: "RELEVANTE" });
 });
 
-export async function patchReadStatus(
+export async function fetchFolders(): Promise<TopicFolder[]> {
+  return apiJson<TopicFolder[]>("/api/folders");
+}
+
+export async function createFolder(name: string): Promise<TopicFolder> {
+  return apiJson<TopicFolder>("/api/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+    timeoutMs: 15_000,
+  });
+}
+
+export async function deleteFolder(folderId: number): Promise<BulkNewsResult> {
+  return apiJson<BulkNewsResult>(`/api/folders/${folderId}`, {
+    method: "DELETE",
+    timeoutMs: 15_000,
+  });
+}
+
+export async function assignNewsFolder(
   id: number,
-  is_read: boolean,
+  folderId: number | null,
 ): Promise<NewsItem> {
-  const response = await fetch(`${API_BASE}/api/news/${id}/read`, {
+  return apiJson<NewsItem>(`/api/news/${id}/folder`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder_id: folderId }),
+    timeoutMs: 15_000,
+  });
+}
+
+export async function patchReadStatus(id: number, is_read: boolean): Promise<NewsItem> {
+  return apiJson<NewsItem>(`/api/news/${id}/read`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_read }),
+    timeoutMs: 15_000,
   });
-
-  if (!response.ok) {
-    throw new Error("Não foi possível atualizar o status de leitura.");
-  }
-
-  return response.json();
 }
 
 export async function patchBookmarkStatus(
   id: number,
   is_bookmarked: boolean,
 ): Promise<NewsItem> {
-  const response = await fetch(`${API_BASE}/api/news/${id}/bookmark`, {
+  return apiJson<NewsItem>(`/api/news/${id}/bookmark`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ is_bookmarked }),
+    timeoutMs: 15_000,
   });
-
-  if (!response.ok) {
-    throw new Error("Não foi possível atualizar o favorito.");
-  }
-
-  return response.json();
 }
 
 export async function triggerIngest(): Promise<IngestResult> {
-  const response = await fetch(`${API_BASE}/api/ingest`, {
+  return apiJson<IngestResult>("/api/ingest", {
     method: "POST",
+    timeoutMs: 600_000,
   });
-
-  if (!response.ok) {
-    throw new Error("A ingestão falhou. Verifique se o backend e o Ollama estão ativos.");
-  }
-
-  return response.json();
 }
 
 export async function seedDemoData(): Promise<SeedResult> {
-  const response = await fetch(`${API_BASE}/api/seed`, {
+  return apiJson<SeedResult>("/api/seed", {
     method: "POST",
+    timeoutMs: 15_000,
   });
-
-  if (!response.ok) {
-    throw new Error("Não foi possível carregar os dados de demonstração.");
-  }
-
-  return response.json();
 }
 
-export async function enrichBackfill(): Promise<EnrichBackfillResult> {
-  const response = await fetch(`${API_BASE}/api/enrich-backfill`, {
+export async function enrichBackfill(limit = 1): Promise<EnrichBackfillResult> {
+  return apiJson<EnrichBackfillResult>(`/api/enrich-backfill?limit=${limit}`, {
     method: "POST",
+    timeoutMs: 300_000,
   });
+}
 
-  if (!response.ok) {
-    throw new Error("Não foi possível traduzir os artigos pendentes.");
-  }
+export async function deleteNewsItem(id: number): Promise<BulkNewsResult> {
+  return apiJson<BulkNewsResult>(`/api/news/${id}`, {
+    method: "DELETE",
+    timeoutMs: 15_000,
+  });
+}
 
-  return response.json();
+export async function bulkDeleteNews(ids: number[]): Promise<BulkNewsResult> {
+  return apiJson<BulkNewsResult>("/api/news/bulk", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+    timeoutMs: 30_000,
+  });
+}
+
+export async function bulkUpdateNews(
+  payload: BulkNewsUpdatePayload,
+): Promise<BulkNewsResult> {
+  return apiJson<BulkNewsResult>("/api/news/bulk", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    timeoutMs: 30_000,
+  });
 }
