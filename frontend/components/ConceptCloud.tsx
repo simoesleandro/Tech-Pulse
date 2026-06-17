@@ -93,7 +93,7 @@ export function ConceptCloud() {
               type="button"
               disabled={isPending || isActive}
               onClick={() => handleConceptClick(item.concept)}
-              className={`rounded-xl transition-all duration-200 cursor-pointer ${tagClass}`}
+              className={`rounded-xl transition-all duration-200 cursor-pointer touch-manipulation ${tagClass}`}
             >
               <span>{item.concept}</span>
               <span className={`ml-1.5 font-mono text-[9px] ${isActive ? "text-slate-800" : "text-muted/80"}`}>

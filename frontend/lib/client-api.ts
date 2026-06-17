@@ -1,4 +1,17 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl) return envUrl;
+
+    const hostname = window.location.hostname;
+    if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
+      return `http://${hostname}:8000`;
+    }
+  }
+  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+}
+
+export const API_BASE = getApiBase();
 
 export class ApiError extends Error {
   status: number;
@@ -46,12 +59,12 @@ export async function apiFetch(
     }
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new ApiError(
-        "Tempo esgotado. Verifique se o backend (localhost:8000) e o Ollama estão ativos.",
+        `Tempo esgotado. Verifique se o backend (${API_BASE}) e o Ollama estão ativos.`,
       );
     }
     if (error instanceof TypeError) {
       throw new ApiError(
-        "Não foi possível conectar ao backend em localhost:8000. Inicie a API e tente novamente.",
+        `Não foi possível conectar ao backend em ${API_BASE}. Inicie a API e tente novamente.`,
       );
     }
     throw error;

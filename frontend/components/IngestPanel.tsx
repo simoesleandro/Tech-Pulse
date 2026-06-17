@@ -8,7 +8,7 @@ import {
   markAllDone,
   type ActivityStep,
 } from "@/components/ActivityLog";
-import { checkApiHealth } from "@/lib/client-api";
+import { API_BASE, checkApiHealth } from "@/lib/client-api";
 import { fetchPipelineSteps, seedDemoData } from "@/lib/api";
 import {
   applyPipelineStepEvent,
@@ -190,7 +190,7 @@ export function IngestPanel() {
           </p>
           {apiOnline === false ? (
             <p className="mt-2 text-xs text-crimson" role="alert">
-              Backend offline em localhost:8000 — inicie a API antes de usar o botão.
+              Backend offline em {API_BASE} — inicie a API antes de usar o botão.
             </p>
           ) : null}
         </div>

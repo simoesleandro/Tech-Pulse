@@ -141,7 +141,7 @@ export function ObsidianExportPanel({
   if (minimized) {
     return (
       <div
-        className="fixed bottom-20 right-4 z-40 flex max-w-sm items-center gap-2 rounded-lg border border-violet-400/40 bg-surface-elevated/95 px-3 py-2 shadow-lg backdrop-blur-md"
+        className="fixed bottom-20 left-4 right-4 sm:left-auto sm:right-4 z-40 flex max-w-none sm:max-w-sm items-center gap-2 rounded-lg border border-violet-400/40 bg-surface-elevated/95 px-3 py-2 shadow-lg backdrop-blur-md"
         role="status"
         aria-live="polite"
       >
@@ -176,7 +176,7 @@ export function ObsidianExportPanel({
 
   return (
     <aside
-      className="pointer-events-none fixed right-4 top-20 z-40 flex max-h-[calc(100vh-7rem)] w-[min(100%,22rem)] flex-col"
+      className="pointer-events-none fixed left-4 right-4 sm:left-auto sm:right-4 top-20 z-40 flex max-h-[calc(100vh-7rem)] w-auto sm:w-[22rem] flex-col"
       role="complementary"
       aria-labelledby="obsidian-export-title"
     >
