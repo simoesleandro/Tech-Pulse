@@ -49,6 +49,7 @@ from app.schemas import (
     TopicFolderResponse,
     ObsidianDigestResponse,
     AppSettings,
+    ObsidianConceptResponse,
 )
 from app.services.pipeline_config import (
     BACKFILL_PIPELINE_STEPS,
@@ -877,4 +878,56 @@ def update_app_settings(settings: AppSettings):
     from app.services.settings import save_settings
     save_settings(settings.model_dump())
     return settings
+
+
+@app.get("/api/obsidian/concepts", response_model=list[ObsidianConceptResponse])
+def get_obsidian_concepts(db: Session = Depends(get_db)):
+    import re
+    from collections import Counter
+    
+    items = db.scalars(
+        select(NewsItem)
+        .where(NewsItem.obsidian_exported_at.isnot(None))
+        .options(joinedload(NewsItem.folder))
+    ).all()
+    
+    TECH_KEYWORDS = {
+        "python": "Python", "rust": "Rust", "go": "Go", "golang": "Go",
+        "javascript": "JavaScript", "typescript": "TypeScript", "react": "React",
+        "next.js": "Next.js", "nextjs": "Next.js", "fastapi": "FastAPI",
+        "django": "Django", "flask": "Flask", "docker": "Docker",
+        "kubernetes": "Kubernetes", "k8s": "Kubernetes", "aws": "AWS",
+        "postgres": "PostgreSQL", "postgresql": "PostgreSQL", "sqlite": "SQLite",
+        "mongodb": "MongoDB", "redis": "Redis", "llm": "LLM", "gpt": "GPT",
+        "openai": "OpenAI", "gemma": "Gemma", "llama": "Llama",
+        "ai": "IA / AI", "ia": "IA / AI", "devops": "DevOps",
+        "git": "Git", "github": "GitHub", "api": "API", "rest": "REST",
+        "graphql": "GraphQL", "linux": "Linux", "tailwind": "Tailwind CSS",
+        "css": "CSS", "html": "HTML", "serverless": "Serverless",
+        "security": "Segurança", "rustlang": "Rust", "ollama": "Ollama",
+        "claude": "Claude", "deepseek": "DeepSeek"
+    }
+    
+    counts = Counter()
+    for item in items:
+        text = f"{item.title} {item.title_original or ''} {item.description or ''}"
+        tokens = re.split(r"[^\w\.\-]+", text.lower())
+        seen_in_item = set()
+        
+        for token in tokens:
+            if token in TECH_KEYWORDS:
+                canonical = TECH_KEYWORDS[token]
+                if canonical not in seen_in_item:
+                    counts[canonical] += 1
+                    seen_in_item.add(canonical)
+                    
+        if item.folder and item.folder.name:
+            folder_name = item.folder.name
+            clean_folder = re.sub(r"[^\w\s&]", "", folder_name).strip()
+            if clean_folder and clean_folder not in seen_in_item:
+                counts[clean_folder] += 1
+                
+    sorted_concepts = counts.most_common(20)
+    return [ObsidianConceptResponse(concept=concept, count=count) for concept, count in sorted_concepts]
+
 

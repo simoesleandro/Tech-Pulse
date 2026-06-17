@@ -177,3 +177,9 @@ export interface AppSettings {
   sources: SourcesSettings;
 }
 
+export interface ObsidianConcept {
+  concept: string;
+  count: number;
+}
+
+

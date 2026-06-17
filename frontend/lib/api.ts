@@ -22,6 +22,7 @@ import type {
   SeedResult,
   TopicFolder,
   AppSettings,
+  ObsidianConcept,
 } from "@/lib/types";
 
 function buildNewsUrl(filters?: NewsFilters): string {
@@ -357,4 +358,9 @@ export async function updateSettings(settings: AppSettings): Promise<AppSettings
     timeoutMs: 15_000,
   });
 }
+
+export async function fetchObsidianConcepts(): Promise<ObsidianConcept[]> {
+  return apiJson<ObsidianConcept[]>("/api/obsidian/concepts", { timeoutMs: 10_000 });
+}
+
 

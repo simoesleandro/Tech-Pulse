@@ -203,3 +203,9 @@ class AppSettings(BaseModel):
     sources: SourcesSettings
 
 
+class ObsidianConceptResponse(BaseModel):
+    concept: str
+    count: int
+
+
+

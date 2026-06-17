@@ -8,6 +8,7 @@ import { NewsFeed } from "@/components/NewsFeed";
 import { ObsidianStatusBanner } from "@/components/ObsidianStatusBanner";
 import { SystemPanel } from "@/components/SystemPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { ConceptCloud } from "@/components/ConceptCloud";
 import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
 import type { FeedView, TopicFolder } from "@/lib/types";
 
@@ -161,6 +162,10 @@ export default async function Home({
 
             <Suspense fallback={<FolderPanelFallback />}>
               <FolderPanel folders={folders} />
+            </Suspense>
+
+            <Suspense fallback={null}>
+              <ConceptCloud />
             </Suspense>
 
             <ObsidianStatusBanner />

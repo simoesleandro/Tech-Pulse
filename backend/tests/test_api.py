@@ -313,3 +313,30 @@ def test_settings_endpoints(client: TestClient):
     assert new_data["sources"]["dev_to"] is False
     assert new_data["sources"]["reddit"] is True
 
+
+def test_obsidian_concepts_endpoint(client: TestClient, db_session):
+    from datetime import datetime, timezone
+    
+    create_response = client.post("/api/news", json=VALID_PAYLOAD)
+    assert create_response.status_code == 201
+    item_id = create_response.json()["id"]
+    
+    from app.models import NewsItem
+    item = db_session.get(NewsItem, item_id)
+    item.title = "Aprenda Next.js, FastAPI e Docker"
+    item.title_original = "Learn Next.js, FastAPI and Docker"
+    item.description = "Tutorial cobrindo Next.js, FastAPI e Docker."
+    item.obsidian_exported_at = datetime.now(timezone.utc)
+    db_session.commit()
+    
+    response = client.get("/api/obsidian/concepts")
+    assert response.status_code == 200
+    concepts = response.json()
+    assert len(concepts) > 0
+    
+    names = [c["concept"] for c in concepts]
+    assert "Next.js" in names
+    assert "FastAPI" in names
+    assert "Docker" in names
+
+

@@ -41,7 +41,13 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [showFolders, setShowFolders] = useState(false);
 
   function handleTriageNext() {
-    setTriageIndex((prev) => Math.min(items.length - 1, prev + 1));
+    setTriageIndex((prev) => {
+      if (prev >= items.length - 1) {
+        setIsTriageMode(false);
+        return 0;
+      }
+      return prev + 1;
+    });
   }
 
   function handleTriagePrev() {
@@ -86,16 +92,21 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const itemIdsKey = initialItems.map((item) => item.id).join(",");
 
   useEffect(() => {
-    setItems(initialItems);
-  }, [itemIdsKey, initialItems]);
+    if (!isTriageMode) {
+      setItems(initialItems);
+    }
+  }, [itemIdsKey, initialItems, isTriageMode]);
 
   useEffect(() => {
     setSelectedIds([]);
     setActionMessage(null);
+  }, [view, page]);
+
+  useEffect(() => {
     setIsTriageMode(false);
     setTriageIndex(0);
     setShowFolders(false);
-  }, [view, page, itemIdsKey]);
+  }, [view]);
 
   useEffect(() => {
     if (!isTriageMode || items.length === 0) {
