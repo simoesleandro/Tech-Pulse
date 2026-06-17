@@ -168,6 +168,7 @@ function NewsCardComponent({
             <time
               dateTime={item.created_at}
               className="font-mono text-[10px] text-muted"
+              suppressHydrationWarning
             >
               {formatTimestamp(item.created_at)}
             </time>

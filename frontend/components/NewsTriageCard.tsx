@@ -127,7 +127,7 @@ export function NewsTriageCard({
               </span>
             )}
           </div>
-          <time dateTime={item.created_at} className="font-mono text-xs text-muted">
+          <time dateTime={item.created_at} className="font-mono text-xs text-muted" suppressHydrationWarning>
             {new Date(item.created_at).toLocaleString("pt-BR", {
               day: "2-digit",
               month: "short",
