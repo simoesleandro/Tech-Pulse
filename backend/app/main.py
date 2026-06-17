@@ -243,6 +243,10 @@ def _news_to_response(item: NewsItem) -> NewsItemResponse:
         folder_id=item.folder_id,
         folder_name=item.folder.name if item.folder else None,
         obsidian_exported_at=item.obsidian_exported_at,
+        engagement_reactions=item.engagement_reactions,
+        engagement_comments=item.engagement_comments,
+        engagement_stars=item.engagement_stars,
+        engagement_ups=item.engagement_ups,
         created_at=item.created_at,
     )
 
@@ -257,6 +261,7 @@ def _apply_news_filters(
     source: str | None,
     min_hype: int | None,
     hype: int | None,
+    obsidian_exported: bool | None,
     q: str | None,
 ):
     if is_read is not None:
@@ -266,7 +271,10 @@ def _apply_news_filters(
     if ai_relevance is not None:
         query = query.where(NewsItem.ai_relevance == ai_relevance)
     if folder_id is not None:
-        query = query.where(NewsItem.folder_id == folder_id)
+        if folder_id == -1:
+            query = query.where(NewsItem.folder_id.is_(None))
+        else:
+            query = query.where(NewsItem.folder_id == folder_id)
     if source is not None:
         if source == "rss":
             query = query.where(NewsItem.source.startswith("rss/"))
@@ -276,6 +284,10 @@ def _apply_news_filters(
         query = query.where(NewsItem.hype_score >= min_hype)
     if hype is not None:
         query = query.where(NewsItem.hype_score == hype)
+    if obsidian_exported is True:
+        query = query.where(NewsItem.obsidian_exported_at.isnot(None))
+    elif obsidian_exported is False:
+        query = query.where(NewsItem.obsidian_exported_at.is_(None))
     if q:
         pattern = f"%{q.strip()}%"
         query = query.where(
@@ -316,6 +328,7 @@ def count_news(
     source: str | None = Query(default=None),
     min_hype: int | None = Query(default=None, ge=0, le=5),
     hype: int | None = Query(default=None, ge=0, le=5),
+    obsidian_exported: bool | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=120),
     db: Session = Depends(get_db),
 ):
@@ -329,6 +342,7 @@ def count_news(
         source=source,
         min_hype=min_hype,
         hype=hype,
+        obsidian_exported=obsidian_exported,
         q=q,
     )
     total = db.scalar(query) or 0
@@ -344,6 +358,7 @@ def list_news(
     source: str | None = Query(default=None),
     min_hype: int | None = Query(default=None, ge=0, le=5),
     hype: int | None = Query(default=None, ge=0, le=5),
+    obsidian_exported: bool | None = Query(default=None),
     q: str | None = Query(default=None, min_length=1, max_length=120),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -359,6 +374,7 @@ def list_news(
         source=source,
         min_hype=min_hype,
         hype=hype,
+        obsidian_exported=obsidian_exported,
         q=q,
     )
 
@@ -372,6 +388,7 @@ def list_news(
         source=source,
         min_hype=min_hype,
         hype=hype,
+        obsidian_exported=obsidian_exported,
         q=q,
     )
     total = db.scalar(count_query) or 0

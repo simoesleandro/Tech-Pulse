@@ -6,6 +6,8 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import {
   HYPE_FILTERS,
+  MIN_HYPE_FILTERS,
+  OBSIDIAN_FILTERS,
   SOURCE_FILTERS,
   TOPIC_FILTERS,
 } from "@/lib/feed-filters";
@@ -117,12 +119,16 @@ function FilterPanel() {
   const activeSource = searchParams.get("source") ?? "";
   const activeQ = searchParams.get("q") ?? "";
   const activeHype = searchParams.get("hype") ?? "";
+  const activeMinHype = searchParams.get("min_hype") ?? "";
+  const activeObsidian = searchParams.get("obsidian") ?? "";
 
   const topicFromQ = TOPIC_FILTERS.some((topic) => topic.id === activeQ)
     ? activeQ
     : "";
 
-  const hasFilters = Boolean(activeSource || activeQ || activeHype);
+  const hasFilters = Boolean(
+    activeSource || activeQ || activeHype || activeMinHype || activeObsidian,
+  );
 
   return (
     <section
@@ -139,6 +145,8 @@ function FilterPanel() {
               source: null,
               q: null,
               hype: null,
+              min_hype: null,
+              obsidian: null,
             })}
             className="font-mono text-[10px] uppercase tracking-wide text-cyan hover:underline"
           >
@@ -174,6 +182,25 @@ function FilterPanel() {
 
       <div className="flex flex-col gap-2">
         <p className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
+          Hype mínimo
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {MIN_HYPE_FILTERS.map((option) => (
+            <FilterChip
+              key={option.id || "any-min"}
+              href={buildHref(pathname, searchParams, {
+                min_hype:
+                  activeMinHype === option.id ? null : option.id || null,
+              })}
+              active={activeMinHype === option.id}
+              label={option.label}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
           Hype (estrelas exatas)
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -184,6 +211,25 @@ function FilterPanel() {
                 hype: activeHype === option.id ? null : option.id || null,
               })}
               active={activeHype === option.id}
+              label={option.label}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <p className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
+          Obsidian
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {OBSIDIAN_FILTERS.map((option) => (
+            <FilterChip
+              key={option.id || "any-obsidian"}
+              href={buildHref(pathname, searchParams, {
+                obsidian:
+                  activeObsidian === option.id ? null : option.id || null,
+              })}
+              active={activeObsidian === option.id}
               label={option.label}
             />
           ))}
@@ -220,7 +266,9 @@ export function FilterBar() {
   const hasActiveFilters = Boolean(
     searchParams.get("source") ||
       searchParams.get("q") ||
-      searchParams.get("hype"),
+      searchParams.get("hype") ||
+      searchParams.get("min_hype") ||
+      searchParams.get("obsidian"),
   );
 
   return (

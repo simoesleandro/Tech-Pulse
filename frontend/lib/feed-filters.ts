@@ -8,8 +8,15 @@ export const SOURCE_FILTERS = [
   { id: "rss", label: "RSS" },
 ] as const;
 
-export const HYPE_FILTERS = [
+export const MIN_HYPE_FILTERS = [
   { id: "", label: "Qualquer hype" },
+  { id: "3", label: "≥ 3★" },
+  { id: "4", label: "≥ 4★" },
+  { id: "5", label: "5★ apenas" },
+] as const;
+
+export const HYPE_FILTERS = [
+  { id: "", label: "Hype exato: qualquer" },
   { id: "5", label: "5★" },
   { id: "4", label: "4★" },
   { id: "3", label: "3★" },
@@ -18,7 +25,13 @@ export const HYPE_FILTERS = [
   { id: "0", label: "0★" },
 ] as const;
 
-/** Chips de assunto/stack — buscam em título e descrição via parâmetro `topic`. */
+export const OBSIDIAN_FILTERS = [
+  { id: "", label: "Obsidian: todos" },
+  { id: "pending", label: "Pendente export" },
+  { id: "exported", label: "Já exportado" },
+] as const;
+
+/** Chips de assunto/stack — buscam em título e descrição via parâmetro `q`. */
 export const TOPIC_FILTERS = [
   { id: "python", label: "Python" },
   { id: "javascript", label: "JavaScript" },

@@ -6,6 +6,7 @@ import { Header } from "@/components/Header";
 import { IngestPanel } from "@/components/IngestPanel";
 import { NewsFeed } from "@/components/NewsFeed";
 import { ObsidianStatusBanner } from "@/components/ObsidianStatusBanner";
+import { SystemPanel } from "@/components/SystemPanel";
 import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
 import type { FeedView, TopicFolder } from "@/lib/types";
 
@@ -60,6 +61,8 @@ export default async function Home({
     page?: string;
     source?: string;
     hype?: string;
+    min_hype?: string;
+    obsidian?: string;
     q?: string;
   }>;
 }) {
@@ -69,6 +72,16 @@ export default async function Home({
   const page = params.page ? Math.max(1, Number(params.page)) : 1;
   const source = params.source || undefined;
   const hype = params.hype !== undefined && params.hype !== "" ? Number(params.hype) : undefined;
+  const minHype =
+    params.min_hype !== undefined && params.min_hype !== ""
+      ? Number(params.min_hype)
+      : undefined;
+  const obsidianExported =
+    params.obsidian === "exported"
+      ? true
+      : params.obsidian === "pending"
+        ? false
+        : undefined;
   const q = params.q?.trim() || undefined;
 
   let unreadCount = 0;
@@ -93,6 +106,8 @@ export default async function Home({
         page,
         source,
         hype,
+        min_hype: minHype,
+        obsidian_exported: obsidianExported,
         q,
       });
       items = feed.items;
@@ -117,6 +132,7 @@ export default async function Home({
       <main className="mx-auto max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <div className="flex flex-col gap-6">
           <IngestPanel />
+          <SystemPanel />
 
           {apiError ? (
             <div

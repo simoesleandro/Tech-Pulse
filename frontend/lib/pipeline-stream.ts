@@ -66,6 +66,16 @@ export async function streamIngest(
   return consumeSseStream<IngestResult>("/api/ingest/stream", onEvent);
 }
 
+export async function streamReEnrichBackfill(
+  limit: number,
+  onEvent: (event: PipelineStepEvent) => void,
+): Promise<EnrichBackfillResult> {
+  return consumeSseStream<EnrichBackfillResult>(
+    `/api/backfill/re-enrich/stream?limit=${limit}`,
+    onEvent,
+  );
+}
+
 export async function streamEnrichBackfill(
   limit: number,
   onEvent: (event: PipelineStepEvent) => void,

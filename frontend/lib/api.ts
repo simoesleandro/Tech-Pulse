@@ -5,15 +5,19 @@ import { apiJson } from "@/lib/client-api";
 import type {
   BulkNewsResult,
   BulkNewsUpdatePayload,
+  BackfillStatus,
   EnrichBackfillResult,
   FeedView,
   IngestResult,
   NewsFilters,
   NewsItem,
   NewsListResponse,
+  ObsidianBackfillResult,
   ObsidianExportResult,
   ObsidianFormatResult,
+  ObsidianMocsResult,
   ObsidianStatus,
+  ObsidianVaultMaintenanceResult,
   PipelineConfig,
   SeedResult,
   TopicFolder,
@@ -41,6 +45,9 @@ function buildNewsUrl(filters?: NewsFilters): string {
   }
   if (filters?.hype !== undefined) {
     params.set("hype", String(filters.hype));
+  }
+  if (filters?.obsidian_exported !== undefined) {
+    params.set("obsidian_exported", String(filters.obsidian_exported));
   }
   if (filters?.q) {
     params.set("q", filters.q);
@@ -78,6 +85,9 @@ function buildNewsCountUrl(filters?: Omit<NewsFilters, "limit" | "offset">): str
   if (filters?.hype !== undefined) {
     params.set("hype", String(filters.hype));
   }
+  if (filters?.obsidian_exported !== undefined) {
+    params.set("obsidian_exported", String(filters.obsidian_exported));
+  }
   if (filters?.q) {
     params.set("q", filters.q);
   }
@@ -102,13 +112,15 @@ export interface FeedQueryOptions {
   page?: number;
   source?: string;
   hype?: number;
+  min_hype?: number;
+  obsidian_exported?: boolean;
   q?: string;
 }
 
 function viewToFilters(
   view: FeedView,
   folderId?: number,
-  extra?: Pick<FeedQueryOptions, "source" | "hype" | "q">,
+  extra?: Pick<FeedQueryOptions, "source" | "hype" | "min_hype" | "obsidian_exported" | "q">,
 ): Omit<NewsFilters, "limit" | "offset"> {
   const filters: Omit<NewsFilters, "limit" | "offset"> = {
     ai_relevance: "RELEVANTE",
@@ -118,11 +130,12 @@ function viewToFilters(
     filters.is_read = true;
   } else if (view === "saved") {
     filters.is_bookmarked = true;
-    if (folderId !== undefined) {
-      filters.folder_id = folderId;
-    }
   } else {
     filters.is_read = false;
+  }
+
+  if (folderId !== undefined) {
+    filters.folder_id = folderId;
   }
 
   if (extra?.source) {
@@ -130,6 +143,12 @@ function viewToFilters(
   }
   if (extra?.hype !== undefined) {
     filters.hype = extra.hype;
+  }
+  if (extra?.min_hype !== undefined) {
+    filters.min_hype = extra.min_hype;
+  }
+  if (extra?.obsidian_exported !== undefined) {
+    filters.obsidian_exported = extra.obsidian_exported;
   }
   if (extra?.q) {
     filters.q = extra.q;
@@ -283,5 +302,37 @@ export async function formatNewsForObsidian(ids: number[]): Promise<ObsidianForm
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
     timeoutMs: 180_000,
+  });
+}
+
+export async function fetchBackfillStatus(): Promise<BackfillStatus> {
+  return apiJson<BackfillStatus>("/api/backfill/status", { timeoutMs: 10_000 });
+}
+
+export async function syncObsidianBackfill(): Promise<ObsidianBackfillResult> {
+  return apiJson<ObsidianBackfillResult>("/api/backfill/obsidian", {
+    method: "POST",
+    timeoutMs: 60_000,
+  });
+}
+
+export async function createObsidianMocs(): Promise<ObsidianMocsResult> {
+  return apiJson<ObsidianMocsResult>("/api/backfill/obsidian/mocs", {
+    method: "POST",
+    timeoutMs: 30_000,
+  });
+}
+
+export async function organizeObsidianVault(): Promise<ObsidianVaultMaintenanceResult> {
+  return apiJson<ObsidianVaultMaintenanceResult>("/api/backfill/obsidian/organize", {
+    method: "POST",
+    timeoutMs: 120_000,
+  });
+}
+
+export async function migrateObsidianVault(): Promise<ObsidianVaultMaintenanceResult> {
+  return apiJson<ObsidianVaultMaintenanceResult>("/api/backfill/obsidian/migrate", {
+    method: "POST",
+    timeoutMs: 300_000,
   });
 }

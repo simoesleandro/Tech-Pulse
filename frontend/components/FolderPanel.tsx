@@ -26,13 +26,13 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
     setFolders(initialFolders);
   }, [initialFolders]);
 
-  if (view !== "saved") {
+  if (view !== "saved" && view !== "queue") {
     return null;
   }
 
   function navigateFolder(folderId: number | null) {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("view", "saved");
+    params.set("view", view);
     if (folderId === null) {
       params.delete("folder");
     } else {
@@ -93,7 +93,9 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
             Pastas por assunto
           </p>
           <p className="mt-1 text-xs text-muted">
-            Organize seus salvos em pastas como IA, DevOps, Python, etc.
+            {view === "queue"
+              ? "Filtre a fila por pasta ou sem pasta para triagem rápida."
+              : "Organize seus salvos em pastas como IA, DevOps, Python, etc."}
           </p>
         </div>
 
@@ -138,7 +140,19 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
               : "border-border text-muted"
           }`}
         >
-          Todos os salvos
+          {view === "queue" ? "Toda a fila" : "Todos os salvos"}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => navigateFolder(-1)}
+          className={`btn-interactive rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-wide ${
+            activeFolder === "-1"
+              ? "border-cyan bg-cyan/10 text-cyan"
+              : "border-border text-muted"
+          }`}
+        >
+          Sem pasta
         </button>
 
         {folders.map((folder) => (

@@ -72,6 +72,57 @@ def test_list_filtered_news(client: TestClient):
     assert items[0]["is_read"] is False
 
 
+def test_list_min_hype_filter(client: TestClient):
+    low = {**VALID_PAYLOAD, "url": "https://example.com/low-hype", "hype_score": 2}
+    high = {**VALID_PAYLOAD, "url": "https://example.com/high-hype", "hype_score": 5}
+    client.post("/api/news", json=low)
+    client.post("/api/news", json=high)
+
+    response = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "min_hype": 4},
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["hype_score"] >= 4
+
+
+def test_list_obsidian_exported_filter(client: TestClient, db_session):
+    from datetime import datetime, timezone
+
+    from app.models import NewsItem
+
+    exported_id = client.post("/api/news", json=VALID_PAYLOAD).json()["id"]
+    pending_payload = {
+        **VALID_PAYLOAD,
+        "url": "https://example.com/pending-obsidian",
+    }
+    pending_id = client.post("/api/news", json=pending_payload).json()["id"]
+
+    item = db_session.get(NewsItem, exported_id)
+    item.obsidian_exported_at = datetime.now(timezone.utc)
+    db_session.commit()
+
+    pending_response = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "obsidian_exported": False},
+    )
+    assert pending_response.status_code == 200, pending_response.text
+    pending_ids = {entry["id"] for entry in pending_response.json()["items"]}
+    assert pending_id in pending_ids
+    assert exported_id not in pending_ids
+
+    exported_response = client.get(
+        "/api/news",
+        params={"ai_relevance": "RELEVANTE", "obsidian_exported": True},
+    )
+    assert exported_response.status_code == 200, exported_response.text
+    exported_ids = {entry["id"] for entry in exported_response.json()["items"]}
+    assert exported_id in exported_ids
+    assert pending_id not in exported_ids
+
+
 def test_list_bookmarked_filter(client: TestClient):
     create_response = client.post("/api/news", json=VALID_PAYLOAD)
     item_id = create_response.json()["id"]

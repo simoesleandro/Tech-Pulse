@@ -7,6 +7,7 @@ import { CardActionMenu } from "@/components/CardActionMenu";
 import { HypeStars } from "@/components/HypeStars";
 import { getSourceTheme } from "@/lib/sources";
 import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
+import { parseAiReasoning } from "@/lib/utils";
 
 interface NewsCardProps {
   item: NewsItem;
@@ -18,6 +19,7 @@ interface NewsCardProps {
   selected?: boolean;
   onToggleSelect?: (id: number) => void;
   selectionDisabled?: boolean;
+  onViewDetail?: (item: NewsItem) => void;
 }
 
 function formatTimestamp(iso: string): string {
@@ -61,11 +63,13 @@ function NewsCardComponent({
   selected = false,
   onToggleSelect,
   selectionDisabled = false,
+  onViewDetail,
 }: NewsCardProps) {
   const [isPending, startTransition] = useTransition();
   const isUnread = !item.is_read;
   const theme = getSourceTheme(item.source);
   const busy = isPending || selectionDisabled;
+  const parsedReasoning = parseAiReasoning(item.ai_reasoning);
 
   function handleUpdate(updated: NewsItem) {
     startTransition(() => {
@@ -73,11 +77,36 @@ function NewsCardComponent({
     });
   }
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (
+      target.closest("button") ||
+      target.closest("a") ||
+      target.closest("input") ||
+      target.closest("label") ||
+      target.classList.contains("cursor-pointer")
+    ) {
+      return;
+    }
+    if (onViewDetail) {
+      onViewDetail(item);
+    }
+  };
+
+  const hypeClass = {
+    3: "card-hype-3",
+    4: "card-hype-4",
+    5: "card-hype-5",
+  }[item.hype_score] || "";
+
   return (
     <article
-      className={`feed-item card-hover group relative rounded-lg border transition-all duration-200 ${theme.cardClass} ${
+      onClick={handleCardClick}
+      className={`feed-item card-hover group relative rounded-lg border transition-all duration-200 ${theme.cardClass} ${hypeClass} ${
         isUnread ? "opacity-100" : "opacity-80"
-      } ${selected ? "ring-2 ring-cyan/50 ring-offset-1 ring-offset-slate-dark" : ""}`}
+      } ${selected ? "ring-2 ring-cyan/50 ring-offset-1 ring-offset-slate-dark" : ""} ${
+        onViewDetail ? "cursor-pointer" : ""
+      }`}
     >
       {isUnread ? (
         <span
@@ -151,7 +180,32 @@ function NewsCardComponent({
           </CardField>
 
           <CardField label="Título" labelClass={theme.fieldLabelClass}>
-            <p className="font-medium leading-snug">{item.title}</p>
+            <div>
+              <p className={`font-medium leading-snug ${onViewDetail ? "group-hover:text-cyan transition-colors" : ""}`}>
+                {item.title}
+              </p>
+              {parsedReasoning ? (
+                <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 items-center font-mono text-[9px] text-muted">
+                  <span className="inline-flex items-center gap-1 rounded bg-surface/50 px-1 py-0.5 border border-border/20">
+                    Novidade: <strong className="text-cyan">{parsedReasoning.novelty ?? "-"}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded bg-surface/50 px-1 py-0.5 border border-border/20">
+                    Utilidade: <strong className="text-cyan">{parsedReasoning.practicality ?? "-"}</strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded bg-surface/50 px-1 py-0.5 border border-border/20">
+                    Comunidade: <strong className="text-cyan">{parsedReasoning.communitySignal ?? "-"}</strong>
+                  </span>
+                  {parsedReasoning.explanation && (
+                    <span
+                      className="ml-1 cursor-help text-violet hover:text-violet-300 underline underline-offset-2"
+                      title={parsedReasoning.explanation}
+                    >
+                      (Reasoning completo)
+                    </span>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </CardField>
 
           <CardField label="Descrição" labelClass={theme.fieldLabelClass}>
@@ -192,3 +246,4 @@ function NewsCardComponent({
 }
 
 export const NewsCard = memo(NewsCardComponent);
+

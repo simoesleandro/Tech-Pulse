@@ -32,6 +32,8 @@ def test_obsidian_status_hybrid_vault_ok_rest_offline(client, monkeypatch):
 
 
 def test_obsidian_format_endpoint(client):
+    from app.services.obsidian_agent import ObsidianNoteResult
+
     create = client.post(
         "/api/news",
         json={
@@ -47,9 +49,14 @@ def test_obsidian_format_endpoint(client):
     item_id = create.json()["id"]
 
     with patch(
-        "app.services.obsidian.generate_obsidian_body",
+        "app.services.obsidian.generate_obsidian_note",
         new=AsyncMock(
-            return_value="# Nota formatada\n\n> [!abstract] O que é\n> Rust é uma linguagem de sistemas.\n\n## Desenvolvimento\n\n### Memória\n- Ownership"
+            return_value=ObsidianNoteResult(
+                body="# Nota formatada\n\n> [!abstract] O que é\n> Rust é uma linguagem de sistemas.\n\n## Desenvolvimento\n\n### Memória\n- Ownership",
+                note_title="Nota formatada",
+                folder="geral",
+                moc="Conceitos",
+            )
         ),
     ):
         response = client.post("/api/obsidian/format", json={"ids": [item_id]})

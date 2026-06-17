@@ -42,6 +42,31 @@ export const INGEST_PIPELINE_STEPS: PipelineStepDef[] = [
   },
 ];
 
+export const RE_ENRICH_PIPELINE_STEPS: PipelineStepDef[] = [
+  {
+    id: "pick",
+    label: "Selecionando artigos legados para re-enriquecer…",
+    estimatedSeconds: 1,
+  },
+  {
+    id: "tradutor",
+    label: "Agente — Tradutor: título e resumo em português…",
+    estimatedSeconds: 90,
+    agent: "tradutor",
+  },
+  {
+    id: "hype",
+    label: "Agente — Analista: rubrica Novidade · Utilidade…",
+    estimatedSeconds: 45,
+    agent: "hype",
+  },
+  {
+    id: "save",
+    label: "Persistindo artigo atualizado no feed…",
+    estimatedSeconds: 2,
+  },
+];
+
 export const BACKFILL_PIPELINE_STEPS: PipelineStepDef[] = [
   {
     id: "pick",

@@ -133,7 +133,7 @@ def test_orquestrador_relevante_runs_all_agents():
     assert mock_generate.call_count == 3
 
     hype_call = mock_generate.call_args_list[2]
-        assert hype_call.kwargs.get("options") == {"temperature": 0.15, "num_predict": 1024}
+    assert hype_call.kwargs.get("options") == {"temperature": 0.15, "num_predict": 1024}
     hype_prompt = hype_call.args[0]
     assert "Guia de orquestração." in hype_prompt
     assert "Score de engajamento pré-calculado" in hype_prompt

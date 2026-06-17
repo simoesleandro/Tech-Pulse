@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FeedPagination } from "@/components/FeedPagination";
 import { NewsCard } from "@/components/NewsCard";
 import { ObsidianExportModal } from "@/components/ObsidianExportModal";
+import { NewsDetailDrawer } from "@/components/NewsDetailDrawer";
 import {
   bulkDeleteNews,
   bulkUpdateNews,
@@ -30,6 +31,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [obsidianExportIds, setObsidianExportIds] = useState<number[] | null>(null);
+  const [activeDetailItem, setActiveDetailItem] = useState<NewsItem | null>(null);
 
   const itemIdsKey = initialItems.map((item) => item.id).join(",");
 
@@ -57,6 +59,9 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     setItems((current) =>
       current.map((item) => (item.id === updated.id ? updated : item)),
     );
+    if (activeDetailItem?.id === updated.id) {
+      setActiveDetailItem(updated);
+    }
     router.refresh();
   }
 
@@ -217,6 +222,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
               selected={selectedIds.includes(item.id)}
               onToggleSelect={handleToggleSelect}
               selectionDisabled={isBusy}
+              onViewDetail={setActiveDetailItem}
             />
           </li>
         ))}
@@ -262,6 +268,14 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
           setActionMessage(`${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
           router.refresh();
         }}
+      />
+
+      <NewsDetailDrawer
+        item={activeDetailItem}
+        onClose={() => setActiveDetailItem(null)}
+        onUpdate={handleUpdate}
+        onObsidianExport={handleObsidianExport}
+        folders={folders}
       />
     </div>
   );

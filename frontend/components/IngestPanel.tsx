@@ -9,7 +9,7 @@ import {
   type ActivityStep,
 } from "@/components/ActivityLog";
 import { checkApiHealth } from "@/lib/client-api";
-import { fetchPipelineSteps } from "@/lib/api";
+import { fetchPipelineSteps, seedDemoData } from "@/lib/api";
 import {
   applyPipelineStepEvent,
   formatEta,
@@ -19,7 +19,7 @@ import {
   type PipelineStepDef,
 } from "@/lib/pipeline-steps";
 import { streamIngest } from "@/lib/pipeline-stream";
-import type { IngestResult, PipelineStepEvent } from "@/lib/types";
+import type { IngestResult, PipelineStepEvent, SeedResult } from "@/lib/types";
 
 export function IngestPanel() {
   const router = useRouter();
@@ -28,6 +28,7 @@ export function IngestPanel() {
   const [logTitle, setLogTitle] = useState("");
   const [statusLine, setStatusLine] = useState<string | null>(null);
   const [ingestResult, setIngestResult] = useState<IngestResult | null>(null);
+  const [seedResult, setSeedResult] = useState<SeedResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [ingestDefs, setIngestDefs] = useState<PipelineStepDef[]>(INGEST_PIPELINE_STEPS);
@@ -146,6 +147,37 @@ export function IngestPanel() {
     }
   }
 
+  async function handleSeedDemo() {
+    if (isBusy) {
+      return;
+    }
+
+    setError(null);
+    setSeedResult(null);
+    setIsBusy(true);
+    setLogTitle("");
+    setSteps([]);
+    setStatusLine(null);
+
+    try {
+      const online = await checkApiHealth();
+      setApiOnline(online);
+      if (!online) {
+        throw new Error(
+          "Backend offline. Execute: cd backend && uvicorn app.main:app --reload",
+        );
+      }
+
+      const result = await seedDemoData();
+      setSeedResult(result);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao carregar dados demo.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-border bg-surface-elevated p-4">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -172,6 +204,14 @@ export function IngestPanel() {
           >
             {isBusy ? "Processando…" : "Atualizar feed"}
           </button>
+          <button
+            type="button"
+            onClick={() => void handleSeedDemo()}
+            disabled={isBusy}
+            className="btn-interactive rounded-md border border-border px-4 py-2 font-mono text-xs uppercase tracking-wide text-muted hover:border-cyan/50 hover:text-cyan disabled:opacity-50"
+          >
+            Dados demo
+          </button>
         </div>
       </div>
 
@@ -197,6 +237,12 @@ export function IngestPanel() {
       {error ? (
         <p className="mt-3 text-sm text-crimson" role="alert">
           {error}
+        </p>
+      ) : null}
+
+      {seedResult && !isBusy ? (
+        <p className="mt-3 font-mono text-xs text-muted">
+          Demo — {seedResult.created} criados · {seedResult.skipped} já existiam
         </p>
       ) : null}
 

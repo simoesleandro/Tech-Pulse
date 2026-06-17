@@ -13,6 +13,10 @@ export interface NewsItem {
   folder_id: number | null;
   folder_name: string | null;
   obsidian_exported_at: string | null;
+  engagement_reactions: number;
+  engagement_comments: number;
+  engagement_stars: number;
+  engagement_ups: number;
   created_at: string;
 }
 
@@ -31,6 +35,7 @@ export interface NewsFilters {
   source?: string;
   min_hype?: number;
   hype?: number;
+  obsidian_exported?: boolean;
   q?: string;
   limit?: number;
   offset?: number;
@@ -130,4 +135,31 @@ export interface ObsidianStatus {
   folder: string;
   connected: boolean | null;
   message: string | null;
+}
+
+export interface BackfillStatus {
+  obsidian_unmarked: number;
+  legacy_enrichment_pending: number;
+}
+
+export interface ObsidianBackfillResult {
+  discovered: number;
+  updated: number;
+  already_marked: number;
+  missing_in_db: number;
+}
+
+export interface ObsidianMocsResult {
+  created: number;
+  updated: number;
+  paths: string[];
+}
+
+export interface ObsidianVaultMaintenanceResult {
+  migrated: number;
+  skipped: number;
+  errors: string[];
+  removed_empty_dirs: number;
+  retitled: number;
+  organized: number;
 }
