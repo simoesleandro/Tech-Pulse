@@ -183,3 +183,9 @@ class ObsidianStatusResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     service: str
+
+
+class ObsidianDigestResponse(BaseModel):
+    created: bool
+    path: str
+

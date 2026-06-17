@@ -47,6 +47,7 @@ from app.schemas import (
     SeedResult,
     TopicFolderCreate,
     TopicFolderResponse,
+    ObsidianDigestResponse,
 )
 from app.services.pipeline_config import (
     BACKFILL_PIPELINE_STEPS,
@@ -73,6 +74,7 @@ from app.services.obsidian import (
     _vault_is_configured,
 )
 from app.services.seed import seed_demo_articles
+from app.services.obsidian_digest import generate_weekly_digest
 
 logger = logging.getLogger(__name__)
 
@@ -786,6 +788,15 @@ async def obsidian_mocs_backfill():
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return ObsidianMocsResult(**result)
+
+
+@app.post("/api/backfill/obsidian/digest", response_model=ObsidianDigestResponse)
+async def obsidian_digest_backfill(db: Session = Depends(get_db)):
+    try:
+        path = await asyncio.to_thread(generate_weekly_digest, db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ObsidianDigestResponse(created=True, path=path)
 
 
 @app.post("/api/backfill/obsidian/organize", response_model=ObsidianMigrateResult)

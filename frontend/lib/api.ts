@@ -336,3 +336,10 @@ export async function migrateObsidianVault(): Promise<ObsidianVaultMaintenanceRe
     timeoutMs: 300_000,
   });
 }
+
+export async function generateObsidianDigest(): Promise<{ created: boolean; path: string }> {
+  return apiJson<{ created: boolean; path: string }>("/api/backfill/obsidian/digest", {
+    method: "POST",
+    timeoutMs: 60_000,
+  });
+}

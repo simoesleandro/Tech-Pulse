@@ -14,6 +14,7 @@ import {
   migrateObsidianVault,
   organizeObsidianVault,
   syncObsidianBackfill,
+  generateObsidianDigest,
 } from "@/lib/api";
 import {
   applyPipelineStepEvent,
@@ -260,6 +261,21 @@ export function SystemPanel() {
               className="btn-interactive rounded-md border border-border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-muted hover:border-violet/50 hover:text-violet disabled:opacity-50"
             >
               Migrar layout
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() =>
+                void runQuickAction("digest", async () => {
+                  const r = await generateObsidianDigest();
+                  return {
+                    message: `Digest criado — gravado em: ${r.path}.`,
+                  };
+                })
+              }
+              className="btn-interactive rounded-md border border-violet/40 bg-violet/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-violet disabled:opacity-50"
+            >
+              Gerar Digest Semanal
             </button>
             <button
               type="button"

@@ -271,6 +271,18 @@ def _write_via_filesystem(relative_path: str, content: str) -> None:
     destination.write_text(content, encoding="utf-8")
 
 
+def write_file_to_obsidian(relative_path: str, content: str) -> None:
+    _reload_settings()
+    write_mode = get_obsidian_write_mode()
+    if write_mode == "rest":
+        connected, message = check_rest_connection()
+        if not connected:
+            raise RuntimeError(message or "Não foi possível conectar ao Obsidian.")
+        _write_via_rest(relative_path, content)
+    else:
+        _write_via_filesystem(relative_path, content)
+
+
 async def format_items_for_obsidian(
     items: list[NewsItem],
     *,
