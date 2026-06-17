@@ -39,6 +39,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [isTriageMode, setIsTriageMode] = useState(false);
   const [triageIndex, setTriageIndex] = useState(0);
   const [showFolders, setShowFolders] = useState(false);
+  const [triageBusyAction, setTriageBusyAction] = useState<"archive" | "save" | "export" | null>(null);
 
   function handleTriageNext() {
     setTriageIndex((prev) => {
@@ -55,18 +56,24 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   }
 
   async function handleTriageArchive(item: NewsItem) {
+    if (triageBusyAction) return;
     const activeItem = item;
+    setTriageBusyAction("archive");
     try {
       const updated = await patchReadStatus(activeItem.id, true);
       handleUpdate(updated);
       handleTriageNext();
     } catch (err) {
       setActionMessage("Erro ao arquivar: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setTriageBusyAction(null);
     }
   }
 
   async function handleTriageSaveToFolder(item: NewsItem, folderId: number) {
+    if (triageBusyAction) return;
     const activeItem = item;
+    setTriageBusyAction("save");
     try {
       const updated = await assignNewsFolder(activeItem.id, folderId === -1 ? null : folderId);
       handleUpdate(updated);
@@ -74,11 +81,15 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
       setShowFolders(false);
     } catch (err) {
       setActionMessage("Erro ao salvar na pasta: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setTriageBusyAction(null);
     }
   }
 
   async function handleTriageExportObsidian(item: NewsItem) {
+    if (triageBusyAction) return;
     const activeItem = item;
+    setTriageBusyAction("export");
     try {
       setObsidianExportIds([activeItem.id]);
       const updated = await patchReadStatus(activeItem.id, true);
@@ -86,6 +97,8 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
       handleTriageNext();
     } catch (err) {
       setActionMessage("Erro ao exportar/arquivar: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setTriageBusyAction(null);
     }
   }
 
@@ -117,6 +130,9 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     if (!activeItem) return;
 
     function handleKeyDown(e: KeyboardEvent) {
+      if (triageBusyAction) {
+        return;
+      }
       const activeEl = document.activeElement;
       if (
         activeEl &&
@@ -182,7 +198,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isTriageMode, triageIndex, items, showFolders, folders]);
+  }, [isTriageMode, triageIndex, items, showFolders, folders, triageBusyAction]);
 
   const selectedCount = useMemo(
     () => items.filter((item) => selectedIds.includes(item.id)).length,
@@ -366,6 +382,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
           hasPrev={activeIndex > 0}
           hasNext={activeIndex < items.length - 1}
           progressText={`Item ${activeIndex + 1} de ${items.length}`}
+          busyAction={triageBusyAction}
         />
 
         <div className="mt-4 flex justify-center">

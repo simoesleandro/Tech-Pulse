@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { HypeStars } from "@/components/HypeStars";
 import { getSourceTheme } from "@/lib/sources";
 import type { NewsItem, TopicFolder } from "@/lib/types";
@@ -19,6 +19,16 @@ interface NewsTriageCardProps {
   hasPrev: boolean;
   hasNext: boolean;
   progressText: string;
+  busyAction: "archive" | "save" | "export" | null;
+}
+
+function ButtonSpinner() {
+  return (
+    <span
+      className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current"
+      aria-hidden="true"
+    />
+  );
 }
 
 export function NewsTriageCard({
@@ -34,29 +44,26 @@ export function NewsTriageCard({
   hasPrev,
   hasNext,
   progressText,
+  busyAction,
 }: NewsTriageCardProps) {
-
-  const [isPending, startTransition] = useTransition();
   const theme = getSourceTheme(item.source);
   const parsedReasoning = parseAiReasoning(item.ai_reasoning);
 
+  const isBusy = busyAction !== null;
+
   function handleArchiveClick() {
-    startTransition(() => {
-      onArchive(item);
-    });
+    if (isBusy) return;
+    onArchive(item);
   }
 
   function handleObsidianClick() {
-    startTransition(() => {
-      onExportObsidian(item);
-    });
+    if (isBusy) return;
+    onExportObsidian(item);
   }
 
   function handleFolderSelect(folderId: number) {
-    setShowFolders(false);
-    startTransition(() => {
-      onSaveToFolder(item, folderId);
-    });
+    if (isBusy) return;
+    onSaveToFolder(item, folderId);
   }
 
   const hypeClass = {
@@ -81,8 +88,8 @@ export function NewsTriageCard({
           <button
             type="button"
             onClick={onPrev}
-            disabled={!hasPrev || isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wide text-foreground hover:bg-cyan/10 hover:text-cyan disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground transition-all"
+            disabled={!hasPrev || isBusy}
+            className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wide text-foreground hover:bg-cyan/10 hover:text-cyan disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground transition-all cursor-pointer"
             title="Item anterior (Atalho: K ou Seta Esquerda)"
           >
             <kbd className="hidden sm:inline-block rounded bg-muted px-1.5 py-0.5 text-[9px] text-slate-800 font-bold">K</kbd>
@@ -91,8 +98,8 @@ export function NewsTriageCard({
           <button
             type="button"
             onClick={onNext}
-            disabled={!hasNext || isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wide text-foreground hover:bg-cyan/10 hover:text-cyan disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground transition-all"
+            disabled={!hasNext || isBusy}
+            className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-surface/50 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wide text-foreground hover:bg-cyan/10 hover:text-cyan disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground transition-all cursor-pointer"
             title="Próximo item (Atalho: J ou Seta Direita)"
           >
             <span>Próximo</span>
@@ -201,15 +208,21 @@ export function NewsTriageCard({
         <button
           type="button"
           onClick={handleArchiveClick}
-          disabled={isPending}
-          className="flex flex-1 min-w-[140px] items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-center font-mono text-xs uppercase tracking-wider text-red-400 hover:bg-red-500/15 disabled:opacity-50 disabled:hover:bg-red-500/5 transition-all"
+          disabled={isBusy}
+          className="flex flex-1 min-w-[140px] items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-center font-mono text-xs uppercase tracking-wider text-red-400 hover:bg-red-500/15 disabled:opacity-50 disabled:hover:bg-red-500/5 transition-all cursor-pointer"
           title="Arquivar item como lido (Atalho: E)"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-          </svg>
-          <span>Lixo / Lido</span>
-          <kbd className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-200">E</kbd>
+          {busyAction === "archive" ? (
+            <ButtonSpinner />
+          ) : (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+            </svg>
+          )}
+          <span>{busyAction === "archive" ? "Arquivando…" : "Lixo / Lido"}</span>
+          {busyAction !== "archive" && (
+            <kbd className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-200">E</kbd>
+          )}
         </button>
 
         {/* Save to Folder Action */}
@@ -217,23 +230,29 @@ export function NewsTriageCard({
           <button
             type="button"
             onClick={() => setShowFolders(!showFolders)}
-            disabled={isPending}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-center font-mono text-xs uppercase tracking-wider transition-all ${
+            disabled={isBusy}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-center font-mono text-xs uppercase tracking-wider transition-all cursor-pointer ${
               showFolders
                 ? "border-cyan/50 bg-cyan/15 text-cyan"
                 : "border-cyan/20 bg-cyan/5 text-cyan-400 hover:bg-cyan/15"
             } disabled:opacity-50`}
             title="Escolher pasta para salvar (Atalho: S)"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-            <span>Salvar Pasta</span>
-            <kbd className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${showFolders ? "bg-cyan/30 text-cyan-200" : "bg-cyan/20 text-cyan-200"}`}>S</kbd>
+            {busyAction === "save" ? (
+              <ButtonSpinner />
+            ) : (
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+            )}
+            <span>{busyAction === "save" ? "Salvando…" : "Salvar Pasta"}</span>
+            {busyAction !== "save" && (
+              <kbd className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${showFolders ? "bg-cyan/30 text-cyan-200" : "bg-cyan/20 text-cyan-200"}`}>S</kbd>
+            )}
           </button>
 
           {/* Inline Folder Selector Popover */}
-          {showFolders && (
+          {showFolders && !isBusy && (
             <div className="absolute bottom-full left-0 right-0 z-50 mb-2 max-h-[280px] overflow-y-auto rounded-xl border border-border/80 bg-slate-950 p-2 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-150">
               <div className="px-3 py-1.5 border-b border-border/40 flex items-center justify-between">
                 <span className="font-mono text-[9px] uppercase tracking-wide text-muted font-bold">
@@ -242,7 +261,7 @@ export function NewsTriageCard({
                 <button
                   type="button"
                   onClick={() => setShowFolders(false)}
-                  className="font-mono text-[9px] text-muted hover:text-foreground"
+                  className="font-mono text-[9px] text-muted hover:text-foreground cursor-pointer"
                 >
                   Fechar
                 </button>
@@ -258,7 +277,7 @@ export function NewsTriageCard({
                         key={folder.id}
                         type="button"
                         onClick={() => handleFolderSelect(folder.id)}
-                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left font-mono text-[11px] text-foreground hover:bg-cyan/10 hover:text-cyan transition-colors"
+                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left font-mono text-[11px] text-foreground hover:bg-cyan/10 hover:text-cyan transition-colors cursor-pointer"
                       >
                         <span className="truncate">→ {folder.name}</span>
                         {numberKey <= 9 && (
@@ -274,7 +293,7 @@ export function NewsTriageCard({
                   <button
                     type="button"
                     onClick={() => handleFolderSelect(-1)} // -1 to remove folder
-                    className="flex w-full items-center justify-between rounded-lg border-t border-border/40 px-3 py-2 text-left font-mono text-[11px] text-crimson hover:bg-crimson/10 transition-colors"
+                    className="flex w-full items-center justify-between rounded-lg border-t border-border/40 px-3 py-2 text-left font-mono text-[11px] text-crimson hover:bg-crimson/10 transition-colors cursor-pointer"
                   >
                     <span>Tirar da pasta</span>
                     <kbd className="rounded bg-crimson/10 px-1.5 py-0.5 text-[9px] text-crimson border border-crimson/20 font-bold">0</kbd>
@@ -289,15 +308,21 @@ export function NewsTriageCard({
         <button
           type="button"
           onClick={handleObsidianClick}
-          disabled={isPending}
-          className="flex flex-1 min-w-[140px] items-center justify-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3 text-center font-mono text-xs uppercase tracking-wider text-violet-300 hover:bg-violet-500/15 disabled:opacity-50 disabled:hover:bg-violet-500/5 transition-all"
+          disabled={isBusy}
+          className="flex flex-1 min-w-[140px] items-center justify-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3 text-center font-mono text-xs uppercase tracking-wider text-violet-300 hover:bg-violet-500/15 disabled:opacity-50 disabled:hover:bg-violet-500/5 transition-all cursor-pointer"
           title="Exportar para Obsidian e arquivar (Atalho: O)"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          <span>Obsidian</span>
-          <kbd className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-bold text-violet-200">O</kbd>
+          {busyAction === "export" ? (
+            <ButtonSpinner />
+          ) : (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          )}
+          <span>{busyAction === "export" ? "Exportando…" : "Obsidian"}</span>
+          {busyAction !== "export" && (
+            <kbd className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-bold text-violet-200">O</kbd>
+          )}
         </button>
       </div>
     </div>
