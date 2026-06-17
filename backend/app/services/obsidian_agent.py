@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.models import NewsItem
+from app.services.obsidian_titles import prettify_note_title
 from app.services.article_content import fetch_article_context
 from app.services.obsidian_orchestrator import agente_orquestrador_obsidian, fallback_orchestration, folder_display_name, folder_emoji
 from app.services.ollama_client import ollama_generate
@@ -229,7 +230,9 @@ def _analysis_from_summary(summary: str, item: NewsItem) -> dict:
 
 
 def render_obsidian_body(item: NewsItem, analysis: dict) -> str:
-    note_title = str(analysis.get("titulo_nota", "")).strip() or item.title
+    note_title = prettify_note_title(
+        str(analysis.get("titulo_nota", "")).strip() or item.title
+    )
     tema = str(analysis.get("tema", "")).strip() or item.description.strip()
     problema = str(analysis.get("problema", "")).strip()
     solucao = str(analysis.get("solucao", "")).strip()
@@ -431,7 +434,7 @@ async def agente_obsidian(
             logger.info("[obsidian-agent] %s → nota rica (%d chars)", item.url, len(body))
             return ObsidianNoteResult(
                 body=body,
-                note_title=str(analysis.get("titulo_nota", item.title)),
+                note_title=prettify_note_title(str(analysis.get("titulo_nota", item.title))),
                 folder=str(analysis.get("pasta", "geral")),
                 moc=str(analysis.get("moc", "MOC-Tech-Pulse")),
             )
@@ -450,7 +453,7 @@ async def agente_obsidian(
     _emit(on_progress, "render", "done", f"{len(body):,} caracteres")
     return ObsidianNoteResult(
         body=body,
-        note_title=str(fallback_analysis.get("titulo_nota", item.title)),
+        note_title=prettify_note_title(str(fallback_analysis.get("titulo_nota", item.title))),
         folder=str(fallback_analysis.get("pasta", "geral")),
         moc=str(fallback_analysis.get("moc", "MOC-Tech-Pulse")),
     )
@@ -466,7 +469,7 @@ def fallback_obsidian_body(item: NewsItem) -> ObsidianNoteResult:
     body = render_obsidian_body(item, merged)
     return ObsidianNoteResult(
         body=body,
-        note_title=str(merged.get("titulo_nota", item.title)),
+        note_title=prettify_note_title(str(merged.get("titulo_nota", item.title))),
         folder=str(merged.get("pasta", "geral")),
         moc=str(merged.get("moc", "MOC-Tech-Pulse")),
     )

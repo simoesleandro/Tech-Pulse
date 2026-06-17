@@ -104,7 +104,7 @@ def _slug_folder(value: str) -> str:
     return slug if slug in KNOWLEDGE_FOLDERS else "geral"
 
 
-def _moc_for_folder(folder: str) -> str:
+def moc_for_folder(folder: str) -> str:
     mapping = {
         "ia-llms": "MOC-IA-LLMs",
         "python-backend": "MOC-Python",
@@ -117,6 +117,39 @@ def _moc_for_folder(folder: str) -> str:
         "geral": "MOC-Tech-Pulse",
     }
     return mapping.get(folder, "MOC-Tech-Pulse")
+
+
+def folder_slug_from_moc(moc: str) -> str | None:
+    for slug in KNOWLEDGE_FOLDERS:
+        if moc_for_folder(slug) == moc.strip():
+            return slug
+    return None
+
+
+def folder_slug_from_area_label(label: str) -> str | None:
+    cleaned = label.strip()
+    for slug, display in FOLDER_DISPLAY.items():
+        if display == cleaned:
+            return slug
+    return None
+
+
+def infer_folder_from_text(text: str, fallback: str = "geral") -> str:
+    combined = text.lower()
+    keywords: list[tuple[str, list[str]]] = [
+        ("ia-llms", ["llm", "gpt", "agente", "rag", "ollama", "gemma", " ia", "inteligência", "cursor", "openai"]),
+        ("python-backend", ["python", "fastapi", "django", "asyncio", "linux"]),
+        ("devops-infra", ["docker", "kubernetes", "aws", "devops", "ci/cd", "infra", "gateway"]),
+        ("frontend-web", ["react", "next.js", "frontend", "css", "browser", "chrome extension"]),
+        ("dados-bancos", ["postgres", "sql", "redis", "banco", "dados"]),
+        ("seguranca", ["security", "segurança", "auth", "vulnerab", "falha"]),
+        ("carreira", ["carreira", "entrevista", "mercado", "adquire", "bilhões"]),
+        ("produtividade", ["obsidian", "produtiv", "workflow", "slay the spire", "self-hosted", "selfhosted"]),
+    ]
+    for slug, terms in keywords:
+        if any(term in combined for term in terms):
+            return slug
+    return fallback
 
 
 def _parse_orchestration(raw: str) -> dict | None:
@@ -172,7 +205,7 @@ def fallback_orchestration(item: NewsItem, analysis: dict) -> dict:
             unique_links.append(link)
 
     titulo = str(analysis.get("titulo_nota") or item.title).strip()[:80]
-    moc = _moc_for_folder(folder)
+    moc = moc_for_folder(folder)
 
     return {
         "titulo_nota": titulo,
@@ -206,7 +239,7 @@ def merge_orchestration(analysis: dict, orchestration: dict) -> dict:
             "titulo_nota": titulo or merged.get("tema", "")[:80],
             "pasta": folder,
             "area_label": folder_display_name(folder),
-            "moc": str(orchestration.get("moc") or _moc_for_folder(folder)).strip(),
+            "moc": str(orchestration.get("moc") or moc_for_folder(folder)).strip(),
             "wikilinks": wikilinks,
             "conexoes": conexoes,
             "tags_extra": tags_extra,

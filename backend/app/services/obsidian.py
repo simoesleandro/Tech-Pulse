@@ -20,6 +20,7 @@ from app.services.obsidian_agent import (
     fallback_obsidian_body,
 )
 from app.services.obsidian_orchestrator import folder_display_name
+from app.services.obsidian_titles import humanize_filename, prettify_note_title
 
 logger = logging.getLogger(__name__)
 
@@ -88,16 +89,6 @@ def slugify_title(title: str, max_len: int = 60) -> str:
     return slug[:max_len] or "nota"
 
 
-_ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
-
-
-def humanize_filename(title: str, max_len: int = 80) -> str:
-    """Nome legível para o explorer: espaços, acentos e capitalização preservados."""
-    cleaned = _ILLEGAL_FILENAME_CHARS.sub("", title.strip())
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
-    return cleaned[:max_len] or "Nota"
-
-
 def _escape_yaml(value: str) -> str:
     return value.replace('"', '\\"')
 
@@ -121,7 +112,7 @@ def build_obsidian_frontmatter(
             clean = re.sub(r"[^\w-]", "-", tag.strip().lower())
             if clean and clean not in tags:
                 tags.append(clean)
-    title = _escape_yaml(note_title or item.title)
+    title = _escape_yaml(prettify_note_title(note_title or item.title))
     area_label = folder_display_name(folder) if folder else ""
     area_line = f'area: "{_escape_yaml(area_label)}"\n' if area_label else ""
     moc_line = f'moc: "{_escape_yaml(moc)}"\n' if moc else ""
@@ -195,11 +186,24 @@ def note_relative_path(
     folder: str | None = None,
     note_title: str | None = None,
 ) -> str:
-    display_title = humanize_filename(note_title or item.title)
+    return build_note_relative_path(
+        item_id=item.id,
+        note_title=note_title or item.title,
+        folder_slug=folder or "geral",
+    )
+
+
+def build_note_relative_path(
+    *,
+    item_id: int,
+    note_title: str,
+    folder_slug: str | None = None,
+) -> str:
+    display_title = humanize_filename(note_title)
     base = PurePosixPath(OBSIDIAN_FOLDER)
-    if folder and folder != "geral":
-        base = base / folder_display_name(folder)
-    return str(base / f"{item.id} - {display_title}.md")
+    if folder_slug:
+        base = base / folder_display_name(folder_slug)
+    return str(base / f"{item_id} - {display_title}.md")
 
 
 def _encode_vault_path(relative_path: str) -> str:
@@ -322,6 +326,13 @@ async def export_items_to_obsidian(
 
     if write_mode == "filesystem" and not _vault_is_configured():
         raise RuntimeError(f"OBSIDIAN_VAULT_PATH inválido: {OBSIDIAN_VAULT_PATH}")
+
+    try:
+        from app.services.obsidian_vault import ensure_moc_stubs
+
+        ensure_moc_stubs()
+    except Exception as exc:
+        logger.warning("Could not ensure MOC stubs: %s", exc)
 
     if mode == "rest":
         connected, message = check_rest_connection()

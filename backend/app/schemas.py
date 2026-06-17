@@ -126,6 +126,21 @@ class ObsidianBackfillResult(BaseModel):
     missing_in_db: int = 0
 
 
+class ObsidianMocsResult(BaseModel):
+    created: int
+    updated: int
+    paths: list[str] = []
+
+
+class ObsidianMigrateResult(BaseModel):
+    migrated: int
+    skipped: int
+    errors: list[str] = []
+    removed_empty_dirs: int = 0
+    retitled: int = 0
+    organized: int = 0
+
+
 class BackfillStatusResponse(BaseModel):
     obsidian_unmarked: int
     legacy_enrichment_pending: int

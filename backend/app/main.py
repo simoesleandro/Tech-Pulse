@@ -39,6 +39,8 @@ from app.schemas import (
     ObsidianExportResult,
     ObsidianFormatResult,
     ObsidianFormattedItem,
+    ObsidianMigrateResult,
+    ObsidianMocsResult,
     ObsidianStatusResponse,
     PipelineConfigResponse,
     PipelineStepResponse,
@@ -60,6 +62,7 @@ from app.services.ingest import (
     set_ingest_cancel_event,
 )
 from app.services.obsidian_backfill import backfill_obsidian_exports
+from app.services.obsidian_vault import ensure_moc_stubs, migrate_legacy_vault_layout, organize_loose_vault_notes
 from app.services.obsidian import (
     build_obsidian_note,
     check_rest_connection,
@@ -757,6 +760,38 @@ def backfill_status(db: Session = Depends(get_db)):
 @app.post("/api/backfill/obsidian", response_model=ObsidianBackfillResult)
 async def obsidian_backfill(db: Session = Depends(get_db)):
     return await asyncio.to_thread(backfill_obsidian_exports, db)
+
+
+@app.post("/api/backfill/obsidian/mocs", response_model=ObsidianMocsResult)
+async def obsidian_mocs_backfill():
+    try:
+        result = await asyncio.to_thread(ensure_moc_stubs)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ObsidianMocsResult(**result)
+
+
+@app.post("/api/backfill/obsidian/organize", response_model=ObsidianMigrateResult)
+async def obsidian_organize_backfill(db: Session = Depends(get_db)):
+    try:
+        result = organize_loose_vault_notes(db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ObsidianMigrateResult(
+        migrated=0,
+        skipped=result.get("skipped", 0),
+        errors=result.get("errors", []),
+        organized=result.get("organized", 0),
+    )
+
+
+@app.post("/api/backfill/obsidian/migrate", response_model=ObsidianMigrateResult)
+async def obsidian_migrate_backfill(db: Session = Depends(get_db)):
+    try:
+        result = await asyncio.to_thread(migrate_legacy_vault_layout, db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return ObsidianMigrateResult(**result)
 
 
 @app.post("/api/backfill/re-enrich", response_model=EnrichBackfillResult)

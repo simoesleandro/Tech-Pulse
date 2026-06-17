@@ -38,6 +38,7 @@ def test_humanize_filename_preserves_spaces_and_case():
         "Deploy do Gemma 12B no AWS"
     )
     assert obsidian_service.humanize_filename('Título com "aspas"') == "Título com aspas"
+    assert obsidian_service.humanize_filename("awesome-selfhosted") == "Awesome Selfhosted"
 
 
 def test_note_relative_path_uses_readable_folder_and_filename():
@@ -198,5 +199,5 @@ def test_export_items_hybrid_writes_filesystem_without_rest(monkeypatch):
 
         assert result["exported"] == 1
         assert result["mode"] == "hybrid"
-        written = Path(tmp_dir) / "Tech-Pulse" / "4 - Hybrid note.md"
+        written = Path(tmp_dir) / "Tech-Pulse" / "📚 Geral" / "4 - Hybrid note.md"
         assert written.is_file()
