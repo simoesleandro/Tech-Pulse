@@ -19,6 +19,30 @@ KNOWLEDGE_FOLDERS: dict[str, str] = {
     "geral": "Geral",
 }
 
+# Nomes legíveis no explorer do Obsidian (emoji + rótulo)
+FOLDER_DISPLAY: dict[str, str] = {
+    "ia-llms": "🤖 IA & LLMs",
+    "python-backend": "🐍 Python & Backend",
+    "devops-infra": "☁️ DevOps & Infra",
+    "frontend-web": "🎨 Frontend & Web",
+    "dados-bancos": "🗄️ Dados & Bancos",
+    "seguranca": "🔒 Segurança",
+    "carreira": "💼 Carreira & Mercado",
+    "produtividade": "⚡ Ferramentas & Produtividade",
+    "geral": "📚 Geral",
+}
+
+
+def folder_display_name(slug: str) -> str:
+    return FOLDER_DISPLAY.get(slug, KNOWLEDGE_FOLDERS.get(slug, slug))
+
+
+def folder_emoji(slug: str) -> str:
+    display = folder_display_name(slug)
+    if display and not display[0].isalnum():
+        return display.split(" ", 1)[0]
+    return ""
+
 ORCHESTRATE_SYSTEM = (
     "Você é um bibliotecário técnico para um vault Obsidian em português do Brasil. "
     "Organize notas com títulos claros, pastas por assunto e wikilinks para grafo de conhecimento. "
@@ -48,7 +72,7 @@ Pastas permitidas (use exatamente o slug):
 
 JSON obrigatório:
 {{
-  "titulo_nota": "título claro em PT-BR (máx. 80 caracteres, específico, sem clickbait)",
+  "titulo_nota": "Título Claro em PT-BR com Espaços (máx. 80 caracteres, capitalização natural)",
   "pasta": "slug da pasta",
   "moc": "MOC-IA-LLMs ou MOC-Python etc. (CamelCase, prefixo MOC-)",
   "wikilinks": ["ConceitoA", "ConceitoB", "ConceitoC", "ConceitoD", "ConceitoE"],
@@ -58,6 +82,8 @@ JSON obrigatório:
 
 Regras:
 - titulo_nota deve ser mais informativo que o título do feed
+- titulo_nota com palavras separadas por ESPAÇO e capitalização natural (ex: "Deploy do Gemma 12B no AWS EC2")
+- NUNCA use kebab-case, snake_case ou tudo minúsculo em titulo_nota
 - mínimo 5 wikilinks CamelCase (sem espaços)
 - conexoes: 2-4 links wiki para conceitos do grafo, não repetir wikilinks
 - tags_extra: 2-4 tags kebab-case em português
@@ -179,7 +205,7 @@ def merge_orchestration(analysis: dict, orchestration: dict) -> dict:
         {
             "titulo_nota": titulo or merged.get("tema", "")[:80],
             "pasta": folder,
-            "area_label": KNOWLEDGE_FOLDERS[folder],
+            "area_label": folder_display_name(folder),
             "moc": str(orchestration.get("moc") or _moc_for_folder(folder)).strip(),
             "wikilinks": wikilinks,
             "conexoes": conexoes,

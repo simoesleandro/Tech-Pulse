@@ -19,6 +19,7 @@ from app.services.obsidian_agent import (
     agente_obsidian,
     fallback_obsidian_body,
 )
+from app.services.obsidian_orchestrator import folder_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -79,11 +80,22 @@ def get_obsidian_config() -> dict:
 
 
 def slugify_title(title: str, max_len: int = 60) -> str:
+    """Legado — kebab-case para compatibilidade com notas antigas no vault."""
     normalized = unicodedata.normalize("NFKD", title)
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^\w\s-]", "", ascii_text.lower())
     slug = re.sub(r"[\s_-]+", "-", slug).strip("-")
     return slug[:max_len] or "nota"
+
+
+_ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def humanize_filename(title: str, max_len: int = 80) -> str:
+    """Nome legível para o explorer: espaços, acentos e capitalização preservados."""
+    cleaned = _ILLEGAL_FILENAME_CHARS.sub("", title.strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned[:max_len] or "Nota"
 
 
 def _escape_yaml(value: str) -> str:
@@ -110,7 +122,8 @@ def build_obsidian_frontmatter(
             if clean and clean not in tags:
                 tags.append(clean)
     title = _escape_yaml(note_title or item.title)
-    area_line = f'area: "{_escape_yaml(folder)}"\n' if folder else ""
+    area_label = folder_display_name(folder) if folder else ""
+    area_line = f'area: "{_escape_yaml(area_label)}"\n' if area_label else ""
     moc_line = f'moc: "{_escape_yaml(moc)}"\n' if moc else ""
     return f"""---
 title: "{title}"
@@ -182,11 +195,11 @@ def note_relative_path(
     folder: str | None = None,
     note_title: str | None = None,
 ) -> str:
-    slug = slugify_title(note_title or item.title)
+    display_title = humanize_filename(note_title or item.title)
     base = PurePosixPath(OBSIDIAN_FOLDER)
     if folder and folder != "geral":
-        base = base / folder
-    return str(base / f"{item.id}-{slug}.md")
+        base = base / folder_display_name(folder)
+    return str(base / f"{item.id} - {display_title}.md")
 
 
 def _encode_vault_path(relative_path: str) -> str:

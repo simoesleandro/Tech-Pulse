@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.models import NewsItem
 from app.services.article_content import fetch_article_context
-from app.services.obsidian_orchestrator import agente_orquestrador_obsidian, fallback_orchestration
+from app.services.obsidian_orchestrator import agente_orquestrador_obsidian, fallback_orchestration, folder_display_name, folder_emoji
 from app.services.ollama_client import ollama_generate
 
 logger = logging.getLogger(__name__)
@@ -244,18 +244,22 @@ def render_obsidian_body(item: NewsItem, analysis: dict) -> str:
     wikilinks = [_wikilink_name(name) for name in _as_list(analysis.get("wikilinks"))]
     conexoes = _as_list(analysis.get("conexoes"))
     moc = str(analysis.get("moc", "")).strip()
-    area_label = str(analysis.get("area_label", "")).strip()
+    folder_slug = str(analysis.get("pasta", "")).strip()
+    area_label = str(analysis.get("area_label", "")).strip() or folder_display_name(folder_slug)
+    emoji = folder_emoji(folder_slug)
+    hype_filled = "★" * item.hype_score
+    hype_empty = "☆" * max(0, 5 - item.hype_score)
 
+    heading = f"# {emoji} {note_title}" if emoji else f"# {note_title}"
     lines = [
-        f"# {note_title}",
+        heading,
+        "",
+        f"**{area_label}** · Hype {hype_filled}{hype_empty} ({item.hype_score}/5) · `{item.source}`",
         "",
         "> [!abstract] O que é",
         f"> {tema}",
         "",
     ]
-
-    if area_label:
-        lines.extend(["> [!note] Área de conhecimento", f"> {area_label}", ""])
 
     if problema:
         lines.extend(["> [!question] Problema que aborda", f"> {problema}", ""])

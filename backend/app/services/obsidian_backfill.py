@@ -13,7 +13,7 @@ from app.services import obsidian as obsidian_service
 
 logger = logging.getLogger(__name__)
 
-NOTE_FILENAME_PATTERN = re.compile(r"^(\d+)-.+\.md$", re.IGNORECASE)
+NOTE_FILENAME_PATTERN = re.compile(r"^(\d+)(?:-|\s-\s).+\.md$", re.IGNORECASE)
 TECHPULSE_ID_PATTERN = re.compile(r"^techpulse_id:\s*(\d+)\s*$", re.MULTILINE)
 
 

@@ -28,9 +28,26 @@ def _sample_item(**overrides) -> NewsItem:
     return NewsItem(**defaults)
 
 
-def test_slugify_title():
+def test_slugify_title_legacy_kebab():
     assert obsidian_service.slugify_title("Hello World!") == "hello-world"
     assert obsidian_service.slugify_title("Orquestrador de Agentes") == "orquestrador-de-agentes"
+
+
+def test_humanize_filename_preserves_spaces_and_case():
+    assert obsidian_service.humanize_filename("Deploy do Gemma 12B no AWS") == (
+        "Deploy do Gemma 12B no AWS"
+    )
+    assert obsidian_service.humanize_filename('Título com "aspas"') == "Título com aspas"
+
+
+def test_note_relative_path_uses_readable_folder_and_filename():
+    item = _sample_item(id=53, title="Após a IA assumir tudo")
+    path = obsidian_service.note_relative_path(
+        item,
+        folder="ia-llms",
+        note_title="Após a IA assumir tudo",
+    )
+    assert path == "Tech-Pulse/🤖 IA & LLMs/53 - Após a IA assumir tudo.md"
 
 
 def test_fallback_obsidian_body_uses_callouts():
@@ -142,7 +159,7 @@ def test_export_items_filesystem_uses_agent(monkeypatch):
         assert result["exported_ids"] == [3]
         assert result["mode"] == "filesystem"
 
-        written = tmp_path / "Tech-Pulse" / "python-backend" / "3-python-tips.md"
+        written = tmp_path / "Tech-Pulse" / "🐍 Python & Backend" / "3 - Python tips.md"
         content = written.read_text(encoding="utf-8")
         assert "> [!abstract] O que é" in content
         assert "techpulse_id: 3" in content
@@ -181,5 +198,5 @@ def test_export_items_hybrid_writes_filesystem_without_rest(monkeypatch):
 
         assert result["exported"] == 1
         assert result["mode"] == "hybrid"
-        written = Path(tmp_dir) / "Tech-Pulse" / "4-hybrid-note.md"
+        written = Path(tmp_dir) / "Tech-Pulse" / "4 - Hybrid note.md"
         assert written.is_file()
