@@ -189,3 +189,17 @@ class ObsidianDigestResponse(BaseModel):
     created: bool
     path: str
 
+
+class SourcesSettings(BaseModel):
+    dev_to: bool
+    reddit: bool
+    github_trends: bool
+    hacker_news: bool
+    rss_feeds: bool
+
+
+class AppSettings(BaseModel):
+    background_ingest_enabled: bool
+    sources: SourcesSettings
+
+

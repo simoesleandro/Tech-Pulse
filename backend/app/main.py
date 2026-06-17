@@ -48,6 +48,7 @@ from app.schemas import (
     TopicFolderCreate,
     TopicFolderResponse,
     ObsidianDigestResponse,
+    AppSettings,
 )
 from app.services.pipeline_config import (
     BACKFILL_PIPELINE_STEPS,
@@ -145,6 +146,12 @@ def _stream_sync_job(job, request: Request):
 async def _ingest_loop() -> None:
     while True:
         await asyncio.sleep(INGEST_INTERVAL_SECONDS)
+        from app.services.settings import load_settings
+        settings = load_settings()
+        if not settings.get("background_ingest_enabled", False):
+            logger.debug("Background ingest is disabled in settings. Skipping.")
+            continue
+
         db = SessionLocal()
         try:
             stats = run_ingest(db)
@@ -204,18 +211,15 @@ async def lifespan(app: FastAPI):
     if INGEST_ON_STARTUP:
         await asyncio.to_thread(_run_startup_ingest)
 
-    ingest_task = None
-    if INGEST_BACKGROUND:
-        ingest_task = asyncio.create_task(_ingest_loop())
+    ingest_task = asyncio.create_task(_ingest_loop())
 
     yield
 
-    if ingest_task is not None:
-        ingest_task.cancel()
-        try:
-            await ingest_task
-        except asyncio.CancelledError:
-            pass
+    ingest_task.cancel()
+    try:
+        await ingest_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="TechPulse API", lifespan=lifespan)
@@ -860,3 +864,17 @@ async def enrich_backfill_stream(
         return enrich_missing_items(db, limit, on_progress=emit)
 
     return _stream_sync_job(job, request)
+
+
+@app.get("/api/settings", response_model=AppSettings)
+def get_app_settings():
+    from app.services.settings import load_settings
+    return load_settings()
+
+
+@app.post("/api/settings", response_model=AppSettings)
+def update_app_settings(settings: AppSettings):
+    from app.services.settings import save_settings
+    save_settings(settings.model_dump())
+    return settings
+

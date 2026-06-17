@@ -21,6 +21,7 @@ import type {
   PipelineConfig,
   SeedResult,
   TopicFolder,
+  AppSettings,
 } from "@/lib/types";
 
 function buildNewsUrl(filters?: NewsFilters): string {
@@ -343,3 +344,17 @@ export async function generateObsidianDigest(): Promise<{ created: boolean; path
     timeoutMs: 60_000,
   });
 }
+
+export async function fetchSettings(): Promise<AppSettings> {
+  return apiJson<AppSettings>("/api/settings", { timeoutMs: 10_000 });
+}
+
+export async function updateSettings(settings: AppSettings): Promise<AppSettings> {
+  return apiJson<AppSettings>("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+    timeoutMs: 15_000,
+  });
+}
+

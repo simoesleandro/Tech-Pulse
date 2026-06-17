@@ -1,0 +1,10 @@
+{
+  "background_ingest_enabled": true,
+  "sources": {
+    "dev_to": false,
+    "reddit": true,
+    "github_trends": true,
+    "hacker_news": false,
+    "rss_feeds": true
+  }
+}

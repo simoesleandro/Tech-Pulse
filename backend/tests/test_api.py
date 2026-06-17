@@ -286,3 +286,30 @@ def test_news_pagination_and_filters(client: TestClient):
     )
     assert count.status_code == 200
     assert count.json()["count"] >= 3
+
+
+def test_settings_endpoints(client: TestClient):
+    response = client.get("/api/settings")
+    assert response.status_code == 200
+    data = response.json()
+    assert "background_ingest_enabled" in data
+    assert "sources" in data
+
+    # Update settings
+    payload = {
+        "background_ingest_enabled": True,
+        "sources": {
+            "dev_to": False,
+            "reddit": True,
+            "github_trends": True,
+            "hacker_news": False,
+            "rss_feeds": True
+        }
+    }
+    update_response = client.post("/api/settings", json=payload)
+    assert update_response.status_code == 200
+    new_data = update_response.json()
+    assert new_data["background_ingest_enabled"] is True
+    assert new_data["sources"]["dev_to"] is False
+    assert new_data["sources"]["reddit"] is True
+

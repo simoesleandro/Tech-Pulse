@@ -163,3 +163,17 @@ export interface ObsidianVaultMaintenanceResult {
   retitled: number;
   organized: number;
 }
+
+export interface SourcesSettings {
+  dev_to: boolean;
+  reddit: boolean;
+  github_trends: boolean;
+  hacker_news: boolean;
+  rss_feeds: boolean;
+}
+
+export interface AppSettings {
+  background_ingest_enabled: boolean;
+  sources: SourcesSettings;
+}
+

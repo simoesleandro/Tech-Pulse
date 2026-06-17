@@ -295,7 +295,22 @@ def run_ingest(
     enricher: Callable[[RawArticle], object] | None = None,
     on_progress: ProgressEmitter | None = None,
 ) -> dict:
-    fetchers = fetchers or DEFAULT_FETCHERS
+    if fetchers is None:
+        from app.services.settings import load_settings
+        settings = load_settings()
+        sources = settings.get("sources", {})
+        fetchers = []
+        if sources.get("dev_to", True):
+            fetchers.append(fetch_devto)
+        if sources.get("reddit", True):
+            fetchers.append(fetch_reddit)
+        if sources.get("github_trends", True):
+            fetchers.append(fetch_github_trends)
+        if sources.get("hacker_news", True):
+            fetchers.append(fetch_hacker_news)
+        if sources.get("rss_feeds", True):
+            fetchers.append(fetch_rss_feeds)
+
     existing_urls = _load_existing_urls(db)
 
     emit_step(on_progress, "fetch", "active")

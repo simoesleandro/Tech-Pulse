@@ -7,6 +7,7 @@ import { IngestPanel } from "@/components/IngestPanel";
 import { NewsFeed } from "@/components/NewsFeed";
 import { ObsidianStatusBanner } from "@/components/ObsidianStatusBanner";
 import { SystemPanel } from "@/components/SystemPanel";
+import { SettingsPanel } from "@/components/SettingsPanel";
 import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
 import type { FeedView, TopicFolder } from "@/lib/types";
 
@@ -132,6 +133,7 @@ export default async function Home({
       <main className="mx-auto max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <div className="flex flex-col gap-6">
           <IngestPanel />
+          <SettingsPanel />
           <SystemPanel />
 
           {apiError ? (
