@@ -11,6 +11,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", f"{OLLAMA_BASE}/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "")
 REQUEST_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "180"))
 OLLAMA_CONCURRENCY = int(os.getenv("OLLAMA_CONCURRENCY", "3"))
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
 
 _resolved_model: str | None = None
 PREFERRED_MODEL_PREFIXES = ("gemma4", "gemma3", "gemma2", "gemma", "llama3", "mistral")
@@ -69,6 +70,7 @@ async def ollama_generate(
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "keep_alive": OLLAMA_KEEP_ALIVE,
     }
     if system:
         payload["system"] = system
