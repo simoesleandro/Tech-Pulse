@@ -23,7 +23,19 @@ def prettify_note_title(title: str) -> str:
     return stripped
 
 
+def prettify_github_title(title: str) -> str:
+    """Prepara títulos do GitHub no padrão 'Dono - Nome Repo' ou qualquer título contendo /."""
+    stripped = title.strip()
+    if "/" in stripped:
+        parts = stripped.split("/", 1)
+        owner = prettify_note_title(parts[0])
+        repo = prettify_note_title(parts[1])
+        return f"{owner} - {repo}"
+    return prettify_note_title(stripped)
+
+
 def humanize_filename(title: str, max_len: int = 80) -> str:
-    cleaned = _ILLEGAL_FILENAME_CHARS.sub("", prettify_note_title(title))
+    cleaned = _ILLEGAL_FILENAME_CHARS.sub("", prettify_github_title(title))
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     return cleaned[:max_len] or "Nota"
+

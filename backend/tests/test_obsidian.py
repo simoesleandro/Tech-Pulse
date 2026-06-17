@@ -41,6 +41,19 @@ def test_humanize_filename_preserves_spaces_and_case():
     assert obsidian_service.humanize_filename("awesome-selfhosted") == "Awesome Selfhosted"
 
 
+def test_prettify_github_title_splits_slashes():
+    from app.services.obsidian_titles import prettify_github_title
+    assert prettify_github_title("vinta/awesome-python") == "Vinta - Awesome Python"
+    assert prettify_github_title("owner-name/some-project-repo") == "Owner Name - Some Project Repo"
+    assert prettify_github_title("just-a-normal-title") == "Just A Normal Title"
+    assert prettify_github_title("vinta/awesome-python") == "Vinta - Awesome Python"
+
+
+def test_humanize_filename_handles_github_slugs():
+    assert obsidian_service.humanize_filename("vinta/awesome-python") == "Vinta - Awesome Python"
+
+
+
 def test_note_relative_path_uses_readable_folder_and_filename():
     item = _sample_item(id=53, title="Após a IA assumir tudo")
     path = obsidian_service.note_relative_path(

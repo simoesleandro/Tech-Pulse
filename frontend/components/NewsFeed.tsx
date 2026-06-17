@@ -9,9 +9,12 @@ import { FeedPagination } from "@/components/FeedPagination";
 import { NewsCard } from "@/components/NewsCard";
 import { ObsidianExportModal } from "@/components/ObsidianExportModal";
 import { NewsDetailDrawer } from "@/components/NewsDetailDrawer";
+import { NewsTriageCard } from "@/components/NewsTriageCard";
 import {
   bulkDeleteNews,
   bulkUpdateNews,
+  patchReadStatus,
+  assignNewsFolder,
 } from "@/lib/api";
 import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
 
@@ -33,6 +36,53 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [obsidianExportIds, setObsidianExportIds] = useState<number[] | null>(null);
   const [activeDetailItem, setActiveDetailItem] = useState<NewsItem | null>(null);
 
+  const [isTriageMode, setIsTriageMode] = useState(false);
+  const [triageIndex, setTriageIndex] = useState(0);
+  const [showFolders, setShowFolders] = useState(false);
+
+  function handleTriageNext() {
+    setTriageIndex((prev) => Math.min(items.length - 1, prev + 1));
+  }
+
+  function handleTriagePrev() {
+    setTriageIndex((prev) => Math.max(0, prev - 1));
+  }
+
+  async function handleTriageArchive(item: NewsItem) {
+    const activeItem = item;
+    try {
+      const updated = await patchReadStatus(activeItem.id, true);
+      handleUpdate(updated);
+      handleTriageNext();
+    } catch (err) {
+      setActionMessage("Erro ao arquivar: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  async function handleTriageSaveToFolder(item: NewsItem, folderId: number) {
+    const activeItem = item;
+    try {
+      const updated = await assignNewsFolder(activeItem.id, folderId === -1 ? null : folderId);
+      handleUpdate(updated);
+      handleTriageNext();
+      setShowFolders(false);
+    } catch (err) {
+      setActionMessage("Erro ao salvar na pasta: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
+  async function handleTriageExportObsidian(item: NewsItem) {
+    const activeItem = item;
+    try {
+      setObsidianExportIds([activeItem.id]);
+      const updated = await patchReadStatus(activeItem.id, true);
+      handleUpdate(updated);
+      handleTriageNext();
+    } catch (err) {
+      setActionMessage("Erro ao exportar/arquivar: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
   const itemIdsKey = initialItems.map((item) => item.id).join(",");
 
   useEffect(() => {
@@ -42,7 +92,86 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   useEffect(() => {
     setSelectedIds([]);
     setActionMessage(null);
+    setIsTriageMode(false);
+    setTriageIndex(0);
+    setShowFolders(false);
   }, [view, page, itemIdsKey]);
+
+  useEffect(() => {
+    if (!isTriageMode || items.length === 0) {
+      return;
+    }
+
+    const activeItem = items[triageIndex];
+    if (!activeItem) return;
+
+    function handleKeyDown(e: KeyboardEvent) {
+      const activeEl = document.activeElement;
+      if (
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.getAttribute("contenteditable") === "true")
+      ) {
+        return;
+      }
+
+      const key = e.key.toLowerCase();
+
+      if (showFolders) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setShowFolders(false);
+          return;
+        }
+        if (key === "s") {
+          e.preventDefault();
+          setShowFolders(false);
+          return;
+        }
+        if (/^[1-9]$/.test(e.key)) {
+          e.preventDefault();
+          const folderIdx = parseInt(e.key, 10) - 1;
+          const targetFolder = folders[folderIdx];
+          if (targetFolder) {
+            void handleTriageSaveToFolder(activeItem, targetFolder.id);
+          }
+          return;
+        }
+        if (e.key === "0") {
+          e.preventDefault();
+          void handleTriageSaveToFolder(activeItem, -1);
+          return;
+        }
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsTriageMode(false);
+        return;
+      }
+
+      if (key === "e") {
+        e.preventDefault();
+        void handleTriageArchive(activeItem);
+      } else if (key === "s") {
+        e.preventDefault();
+        setShowFolders(true);
+      } else if (key === "o") {
+        e.preventDefault();
+        void handleTriageExportObsidian(activeItem);
+      } else if (key === "j" || e.key === "ArrowRight") {
+        e.preventDefault();
+        handleTriageNext();
+      } else if (key === "k" || e.key === "ArrowLeft") {
+        e.preventDefault();
+        handleTriagePrev();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isTriageMode, triageIndex, items, showFolders, folders]);
 
   const selectedCount = useMemo(
     () => items.filter((item) => selectedIds.includes(item.id)).length,
@@ -203,11 +332,86 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     return <EmptyState view={view} />;
   }
 
+  if (isTriageMode) {
+    const activeIndex = Math.min(triageIndex, items.length - 1);
+    const currentItem = items[activeIndex];
+
+    return (
+      <div className="flex flex-col gap-3 pb-24">
+        {actionMessage ? (
+          <p className="font-mono text-[10px] text-violet-300">{actionMessage}</p>
+        ) : null}
+
+        <NewsTriageCard
+          item={currentItem}
+          folders={folders}
+          showFolders={showFolders}
+          setShowFolders={setShowFolders}
+          onArchive={handleTriageArchive}
+          onSaveToFolder={handleTriageSaveToFolder}
+          onExportObsidian={handleTriageExportObsidian}
+          onNext={handleTriageNext}
+          onPrev={handleTriagePrev}
+          hasPrev={activeIndex > 0}
+          hasNext={activeIndex < items.length - 1}
+          progressText={`Item ${activeIndex + 1} de ${items.length}`}
+        />
+
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setIsTriageMode(false)}
+            className="rounded-lg border border-border bg-surface px-4 py-2 font-mono text-xs uppercase tracking-wider text-muted hover:text-foreground transition-colors cursor-pointer"
+          >
+            Sair do Modo Triagem (Esc)
+          </button>
+        </div>
+
+        <ObsidianExportModal
+          ids={obsidianExportIds ?? []}
+          open={Boolean(obsidianExportIds?.length)}
+          onClose={() => setObsidianExportIds(null)}
+          onComplete={(result) => {
+            const exportedAt = new Date().toISOString();
+            const exportedSet = new Set(result.exported_ids ?? []);
+            setItems((current) =>
+              current.map((item) =>
+                exportedSet.has(item.id)
+                  ? { ...item, obsidian_exported_at: exportedAt }
+                  : item,
+              ),
+            );
+            setActionMessage(`${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
+            router.refresh();
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-3 pb-24">
       {actionMessage ? (
         <p className="font-mono text-[10px] text-violet-300">{actionMessage}</p>
       ) : null}
+
+      {view === "queue" && items.length > 0 && (
+        <div className="flex justify-end mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsTriageMode(true);
+              setTriageIndex(0);
+            }}
+            className="flex items-center gap-2 rounded-xl border border-cyan/35 bg-cyan/5 px-4 py-2.5 font-mono text-xs uppercase tracking-wider text-cyan hover:bg-cyan/15 transition-all shadow-md hover:shadow-cyan/5 cursor-pointer"
+          >
+            <svg className="h-4 w-4 animate-pulse text-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+            <span>Triar Fila Rápida</span>
+          </button>
+        </div>
+      )}
 
       <ul className="flex flex-col gap-2" role="list">
         {items.map((item) => (

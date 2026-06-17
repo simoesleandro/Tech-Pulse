@@ -239,6 +239,9 @@ async def agente_tradutor(article: RawArticle) -> tuple[str, str]:
     prompt = TRADUTOR_PROMPT.format(title=article.title, snippet=snippet[:500])
     raw = await ollama_generate(prompt, system=TRADUTOR_SYSTEM)
     title_pt, desc_pt = _parse_tradutor_response(raw, article)
+    if article.source == "github_trends":
+        from app.services.obsidian_titles import prettify_github_title
+        title_pt = prettify_github_title(title_pt)
     logger.info("[tradutor] %s → título traduzido", article.url)
     return title_pt, desc_pt
 
