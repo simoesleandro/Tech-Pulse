@@ -127,6 +127,14 @@ function NewsCardComponent({
                   {item.folder_name}
                 </span>
               ) : null}
+              {item.obsidian_exported_at ? (
+                <span
+                  className="rounded-full border border-violet-400/40 bg-violet-500/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-violet-300"
+                  title={`Exportado ao Obsidian em ${formatTimestamp(item.obsidian_exported_at)}`}
+                >
+                  Obsidian
+                </span>
+              ) : null}
             </div>
             <time
               dateTime={item.created_at}

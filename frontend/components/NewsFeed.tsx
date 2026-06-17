@@ -249,8 +249,18 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
         ids={obsidianExportIds ?? []}
         open={Boolean(obsidianExportIds?.length)}
         onClose={() => setObsidianExportIds(null)}
-        onComplete={(exported) => {
-          setActionMessage(`${exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
+        onComplete={(result) => {
+          const exportedAt = new Date().toISOString();
+          const exportedSet = new Set(result.exported_ids ?? []);
+          setItems((current) =>
+            current.map((item) =>
+              exportedSet.has(item.id)
+                ? { ...item, obsidian_exported_at: exportedAt }
+                : item,
+            ),
+          );
+          setActionMessage(`${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
+          router.refresh();
         }}
       />
     </div>

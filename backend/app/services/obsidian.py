@@ -4,11 +4,13 @@ import os
 import re
 import unicodedata
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import httpx
 from dotenv import load_dotenv
+from sqlalchemy import select
 
 from app.models import NewsItem
 from app.services.obsidian_agent import ObsidianProgressCallback, agente_obsidian, fallback_obsidian_body
@@ -233,6 +235,7 @@ async def export_items_to_obsidian(
             raise RuntimeError(message or "Não foi possível conectar ao Obsidian.")
 
     exported_paths: list[str] = []
+    exported_ids: list[int] = []
     errors: list[str] = []
     total = len(items)
 
@@ -261,6 +264,7 @@ async def export_items_to_obsidian(
                 _write_via_filesystem(relative_path, markdown)
 
             exported_paths.append(relative_path)
+            exported_ids.append(item.id)
             if emit:
                 emit(
                     {
@@ -285,7 +289,19 @@ async def export_items_to_obsidian(
 
     return {
         "exported": len(exported_paths),
+        "exported_ids": exported_ids,
         "paths": exported_paths,
         "mode": mode,
         "errors": errors,
     }
+
+
+def mark_items_obsidian_exported(db, item_ids: list[int]) -> None:
+    if not item_ids:
+        return
+
+    exported_at = datetime.now(timezone.utc)
+    items = db.scalars(select(NewsItem).where(NewsItem.id.in_(item_ids))).all()
+    for item in items:
+        item.obsidian_exported_at = exported_at
+    db.commit()

@@ -105,6 +105,40 @@ def _count_pending(db: Session) -> int:
     )
 
 
+def needs_agent_refresh(item: NewsItem) -> bool:
+    if not item.is_enriched or item.ai_relevance != "RELEVANTE":
+        return False
+    reasoning = (item.ai_reasoning or "").strip()
+    if not reasoning:
+        return True
+    return "Novidade" not in reasoning or "Utilidade" not in reasoning
+
+
+def _count_legacy_enrichment(db: Session) -> int:
+    items = db.scalars(
+        select(NewsItem)
+        .where(NewsItem.is_enriched.is_(True))
+        .where(NewsItem.ai_relevance == "RELEVANTE")
+    ).all()
+    return sum(1 for item in items if needs_agent_refresh(item))
+
+
+def get_backfill_status(db: Session) -> dict[str, int]:
+    obsidian_unmarked = (
+        db.scalar(
+            select(func.count())
+            .select_from(NewsItem)
+            .where(NewsItem.obsidian_exported_at.is_(None))
+            .where(NewsItem.ai_relevance == "RELEVANTE")
+        )
+        or 0
+    )
+    return {
+        "obsidian_unmarked": obsidian_unmarked,
+        "legacy_enrichment_pending": _count_legacy_enrichment(db),
+    }
+
+
 def _persist_article(db: Session, article: RawArticle, enriched: EnrichedArticle) -> NewsItem:
     hype_score = resolve_hype_score(enriched.hype_score, article)
     db_item = NewsItem(
@@ -408,6 +442,81 @@ def enrich_missing_items(
         "processed": processed,
         "errors": errors,
         "candidates": pending_before,
+        "remaining": remaining,
+        "error_messages": error_messages,
+    }
+
+
+def re_enrich_legacy_items(
+    db: Session,
+    limit: int = 5,
+    on_progress: ProgressEmitter | None = None,
+) -> dict[str, int]:
+    candidates_before = _count_legacy_enrichment(db)
+    all_candidates = db.scalars(
+        select(NewsItem)
+        .where(NewsItem.is_enriched.is_(True))
+        .where(NewsItem.ai_relevance == "RELEVANTE")
+        .order_by(NewsItem.created_at.desc())
+    ).all()
+    items = [item for item in all_candidates if needs_agent_refresh(item)][:limit]
+
+    processed = 0
+    errors = 0
+    error_messages: list[str] = []
+
+    emit_step(on_progress, "pick", "active", f"{len(items)} legado(s) selecionado(s)")
+
+    for index, item in enumerate(items, start=1):
+        try:
+            raw = item_to_raw_article(item)
+            if not raw.description_snippet and item.description:
+                raw = RawArticle(
+                    title=raw.title,
+                    url=raw.url,
+                    source=raw.source,
+                    description_snippet=item.description,
+                    positive_reactions=item.engagement_reactions,
+                    comments_count=item.engagement_comments,
+                    stars=item.engagement_stars,
+                    ups=item.engagement_ups,
+                )
+
+            emit_step(on_progress, "pick", "done", raw.title[:80])
+
+            enriched = _enrich_with_progress(
+                raw,
+                on_progress,
+                article_index=index,
+                article_total=len(items),
+            )
+
+            emit_step(on_progress, "save", "active", raw.title[:80])
+            item.title = enriched.title_pt
+            item.title_original = raw.title
+            item.description = enriched.description_pt
+            item.ai_relevance = enriched.ai_relevance
+            item.ai_reasoning = enriched.ai_reasoning
+            apply_engagement_from_article(item, raw)
+            item.hype_score = resolve_hype_score(enriched.hype_score, raw)
+            if item.hype_score == 0:
+                refresh_item_hype(item)
+            item.is_enriched = True
+            db.commit()
+            emit_step(on_progress, "save", "done", enriched.title_pt[:80])
+            processed += 1
+        except Exception as exc:
+            db.rollback()
+            errors += 1
+            error_messages.append(f"{item.url}: {exc}")
+            logger.warning("Legacy re-enrich failed for %s: %s", item.url, exc)
+
+    remaining = _count_legacy_enrichment(db)
+
+    return {
+        "processed": processed,
+        "errors": errors,
+        "candidates": candidates_before,
         "remaining": remaining,
         "error_messages": error_messages,
     }

@@ -56,7 +56,7 @@ HYPE_SYSTEM = (
     "3) 'OpenAI lança modelo open-source rival ao GPT-4' → hype 5, novelty 5, practicality 4, community_signal 5"
 )
 
-HYPE_OPTIONS = {"temperature": 0.15, "num_predict": 256}
+HYPE_OPTIONS = {"temperature": 0.15, "num_predict": 1024}
 
 SOURCE_WEIGHT_HINTS = {
     "hacker_news": "Hacker News costuma trazer discussões densas e alto impacto.",

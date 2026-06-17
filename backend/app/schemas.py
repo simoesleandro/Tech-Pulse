@@ -25,6 +25,7 @@ class NewsItemResponse(NewsItemBase):
     is_bookmarked: bool
     folder_id: int | None = None
     folder_name: str | None = None
+    obsidian_exported_at: datetime | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -118,12 +119,25 @@ class BulkNewsResult(BaseModel):
     affected: int
 
 
+class ObsidianBackfillResult(BaseModel):
+    discovered: int
+    updated: int
+    already_marked: int
+    missing_in_db: int = 0
+
+
+class BackfillStatusResponse(BaseModel):
+    obsidian_unmarked: int
+    legacy_enrichment_pending: int
+
+
 class ObsidianExportRequest(BaseModel):
     ids: list[int]
 
 
 class ObsidianExportResult(BaseModel):
     exported: int
+    exported_ids: list[int] = []
     paths: list[str]
     mode: str
     errors: list[str] = []

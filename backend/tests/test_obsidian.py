@@ -108,6 +108,7 @@ def test_export_items_filesystem_uses_agent(tmp_path, monkeypatch):
         result = asyncio.run(obsidian_service.export_items_to_obsidian([item]))
 
     assert result["exported"] == 1
+    assert result["exported_ids"] == [3]
     assert result["mode"] == "filesystem"
 
     written = tmp_path / "Tech-Pulse" / "3-python-tips.md"

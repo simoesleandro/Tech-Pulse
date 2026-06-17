@@ -12,6 +12,7 @@ export interface NewsItem {
   is_bookmarked: boolean;
   folder_id: number | null;
   folder_name: string | null;
+  obsidian_exported_at: string | null;
   created_at: string;
 }
 
@@ -112,6 +113,7 @@ export interface BulkNewsUpdatePayload {
 
 export interface ObsidianExportResult {
   exported: number;
+  exported_ids: number[];
   paths: string[];
   mode: string;
   errors: string[];

@@ -33,6 +33,8 @@ from app.schemas import (
     NewsItemResponse,
     NewsCountResponse,
     NewsListResponse,
+    BackfillStatusResponse,
+    ObsidianBackfillResult,
     ObsidianExportRequest,
     ObsidianExportResult,
     ObsidianFormatResult,
@@ -50,13 +52,21 @@ from app.services.pipeline_config import (
     steps_to_dict,
 )
 from app.services.hype_backfill import backfill_missing_hype
-from app.services.ingest import enrich_missing_items, run_ingest, set_ingest_cancel_event
+from app.services.ingest import (
+    enrich_missing_items,
+    get_backfill_status,
+    re_enrich_legacy_items,
+    run_ingest,
+    set_ingest_cancel_event,
+)
+from app.services.obsidian_backfill import backfill_obsidian_exports
 from app.services.obsidian import (
     build_obsidian_note,
     check_rest_connection,
     export_items_to_obsidian,
     format_items_for_obsidian,
     get_obsidian_config,
+    mark_items_obsidian_exported,
 )
 from app.services.seed import seed_demo_articles
 
@@ -162,12 +172,28 @@ def _run_hype_backfill() -> None:
         db.close()
 
 
+def _run_obsidian_backfill() -> None:
+    db = SessionLocal()
+    try:
+        result = backfill_obsidian_exports(db)
+        if result["updated"]:
+            logger.info(
+                "Obsidian backfill marked %s exported notes on startup",
+                result["updated"],
+            )
+    except Exception:
+        logger.exception("Startup Obsidian backfill failed")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     migrate_sqlite_schema()
 
     asyncio.create_task(asyncio.to_thread(_run_hype_backfill))
+    asyncio.create_task(asyncio.to_thread(_run_obsidian_backfill))
 
     if INGEST_ON_STARTUP:
         await asyncio.to_thread(_run_startup_ingest)
@@ -212,6 +238,7 @@ def _news_to_response(item: NewsItem) -> NewsItemResponse:
         is_bookmarked=item.is_bookmarked,
         folder_id=item.folder_id,
         folder_name=item.folder.name if item.folder else None,
+        obsidian_exported_at=item.obsidian_exported_at,
         created_at=item.created_at,
     )
 
@@ -624,6 +651,7 @@ async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depen
 
     try:
         result = await export_items_to_obsidian(items, emit=None)
+        mark_items_obsidian_exported(db, result.get("exported_ids", []))
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -637,7 +665,15 @@ async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depen
 
 
 def _run_obsidian_export_job(items: list[NewsItem], emit) -> dict:
-    return asyncio.run(export_items_to_obsidian(items, emit=emit))
+    result = asyncio.run(export_items_to_obsidian(items, emit=emit))
+    exported_ids = result.get("exported_ids", [])
+    if exported_ids:
+        db = SessionLocal()
+        try:
+            mark_items_obsidian_exported(db, exported_ids)
+        finally:
+            db.close()
+    return result
 
 
 @app.post("/api/obsidian/export/stream")
@@ -683,6 +719,36 @@ async def seed_demo(db: Session = Depends(get_db)):
     if os.getenv("ALLOW_SEED", "true").lower() != "true":
         raise HTTPException(status_code=403, detail="Endpoint de seed desabilitado")
     return await asyncio.to_thread(seed_demo_articles, db)
+
+
+@app.get("/api/backfill/status", response_model=BackfillStatusResponse)
+def backfill_status(db: Session = Depends(get_db)):
+    return BackfillStatusResponse(**get_backfill_status(db))
+
+
+@app.post("/api/backfill/obsidian", response_model=ObsidianBackfillResult)
+async def obsidian_backfill(db: Session = Depends(get_db)):
+    return await asyncio.to_thread(backfill_obsidian_exports, db)
+
+
+@app.post("/api/backfill/re-enrich", response_model=EnrichBackfillResult)
+async def re_enrich_backfill(
+    limit: int = Query(default=1, ge=1, le=5),
+    db: Session = Depends(get_db),
+):
+    return await asyncio.to_thread(re_enrich_legacy_items, db, limit)
+
+
+@app.post("/api/backfill/re-enrich/stream")
+async def re_enrich_backfill_stream(
+    request: Request,
+    limit: int = Query(default=1, ge=1, le=5),
+    db: Session = Depends(get_db),
+):
+    def job(emit):
+        return re_enrich_legacy_items(db, limit, on_progress=emit)
+
+    return _stream_sync_job(job, request)
 
 
 @app.post("/api/enrich-backfill", response_model=EnrichBackfillResult)

@@ -223,6 +223,35 @@ Persistência → API REST → Dashboard Next.js
 
 ---
 
+## 🔄 Backfill (Obsidian + legado)
+
+Endpoints para sincronizar estado antigo com o pipeline atual:
+
+| Endpoint | Descrição |
+|----------|-----------|
+| `GET /api/backfill/status` | Contadores pendentes |
+| `POST /api/backfill/obsidian` | Marca `obsidian_exported_at` para notas já no vault |
+| `POST /api/backfill/re-enrich?limit=5` | Reprocessa itens legados (triador → tradutor → hype) |
+
+**PowerShell** (não use `curl -X`; use `Invoke-RestMethod`):
+
+```powershell
+# Status
+Invoke-RestMethod -Uri "http://localhost:8000/api/backfill/status"
+
+# Re-enriquecer até remaining = 0 (~6–10 min por lote de 5)
+do {
+  $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/backfill/re-enrich?limit=5"
+  $r | Format-List
+} while ($r.remaining -gt 0)
+```
+
+Itens legados são detectados quando `ai_reasoning` não contém `Novidade` e `Utilidade`. O backfill Obsidian roda no startup do backend; para vault local, defina `OBSIDIAN_VAULT_PATH` no `backend/.env`.
+
+> **Jun/2026:** re-enriquecimento parcial em andamento (~16/30 concluídos). Retomar com o loop acima.
+
+---
+
 ## 🧪 Testes / Tests
 
 ```bash

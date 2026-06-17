@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -41,6 +41,9 @@ class NewsItem(Base):
     )
     folder_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("topic_folders.id"), nullable=True
+    )
+    obsidian_exported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -104,6 +107,8 @@ def migrate_sqlite_schema() -> None:
             conn.execute(text("ALTER TABLE news_items ADD COLUMN folder_id INTEGER"))
         if "ai_reasoning" not in columns:
             conn.execute(text("ALTER TABLE news_items ADD COLUMN ai_reasoning TEXT"))
+        if "obsidian_exported_at" not in columns:
+            conn.execute(text("ALTER TABLE news_items ADD COLUMN obsidian_exported_at TEXT"))
 
         conn.execute(
             text(
