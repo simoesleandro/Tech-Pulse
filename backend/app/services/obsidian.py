@@ -13,7 +13,12 @@ from dotenv import load_dotenv
 from sqlalchemy import select
 
 from app.models import NewsItem
-from app.services.obsidian_agent import ObsidianProgressCallback, agente_obsidian, fallback_obsidian_body
+from app.services.obsidian_agent import (
+    ObsidianNoteResult,
+    ObsidianProgressCallback,
+    agente_obsidian,
+    fallback_obsidian_body,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +44,27 @@ _reload_settings()
 
 def get_obsidian_mode() -> str | None:
     _reload_settings()
-    if OBSIDIAN_REST_API_KEY:
+    has_rest = bool(OBSIDIAN_REST_API_KEY)
+    has_vault = bool(OBSIDIAN_VAULT_PATH)
+    if has_rest and has_vault:
+        return "hybrid"
+    if has_rest:
         return "rest"
-    if OBSIDIAN_VAULT_PATH:
+    if has_vault:
         return "filesystem"
+    return None
+
+
+def _vault_is_configured() -> bool:
+    return bool(OBSIDIAN_VAULT_PATH) and Path(OBSIDIAN_VAULT_PATH).is_dir()
+
+
+def get_obsidian_write_mode() -> str | None:
+    mode = get_obsidian_mode()
+    if mode in ("filesystem", "hybrid"):
+        return "filesystem"
+    if mode == "rest":
+        return "rest"
     return None
 
 
@@ -73,22 +95,63 @@ def _obsidian_tags(item: NewsItem) -> list[str]:
     return ["tech-pulse", source_tag]
 
 
-def build_obsidian_frontmatter(item: NewsItem) -> str:
+def build_obsidian_frontmatter(
+    item: NewsItem,
+    *,
+    note_title: str | None = None,
+    folder: str | None = None,
+    moc: str | None = None,
+    extra_tags: list[str] | None = None,
+) -> str:
     tags = _obsidian_tags(item)
+    if extra_tags:
+        for tag in extra_tags:
+            clean = re.sub(r"[^\w-]", "-", tag.strip().lower())
+            if clean and clean not in tags:
+                tags.append(clean)
+    title = _escape_yaml(note_title or item.title)
+    area_line = f'area: "{_escape_yaml(folder)}"\n' if folder else ""
+    moc_line = f'moc: "{_escape_yaml(moc)}"\n' if moc else ""
     return f"""---
-title: "{_escape_yaml(item.title)}"
+title: "{title}"
 source: {item.source}
 url: {item.url}
 hype: {item.hype_score}
 tags: [{", ".join(tags)}]
 techpulse_id: {item.id}
-created: {item.created_at.isoformat()}
+{area_line}{moc_line}created: {item.created_at.isoformat()}
 ---
 """
 
 
-def build_obsidian_note(item: NewsItem, body: str) -> str:
-    return f"{build_obsidian_frontmatter(item)}\n{body.strip()}\n"
+def build_obsidian_note(
+    item: NewsItem,
+    body: str,
+    *,
+    note_title: str | None = None,
+    folder: str | None = None,
+    moc: str | None = None,
+    extra_tags: list[str] | None = None,
+) -> str:
+    frontmatter = build_obsidian_frontmatter(
+        item,
+        note_title=note_title,
+        folder=folder,
+        moc=moc,
+        extra_tags=extra_tags,
+    )
+    return f"{frontmatter}\n{body.strip()}\n"
+
+
+async def generate_obsidian_note(
+    item: NewsItem,
+    *,
+    use_agent: bool = True,
+    on_progress: ObsidianProgressCallback | None = None,
+) -> ObsidianNoteResult:
+    if use_agent:
+        return await agente_obsidian(item, on_progress=on_progress)
+    return fallback_obsidian_body(item)
 
 
 async def generate_obsidian_body(
@@ -97,19 +160,33 @@ async def generate_obsidian_body(
     use_agent: bool = True,
     on_progress: ObsidianProgressCallback | None = None,
 ) -> str:
-    if use_agent:
-        return await agente_obsidian(item, on_progress=on_progress)
-    return fallback_obsidian_body(item)
+    note = await generate_obsidian_note(item, use_agent=use_agent, on_progress=on_progress)
+    return note.body
 
 
 def news_item_to_markdown(item: NewsItem) -> str:
     """Compatibilidade síncrona — usa template fallback sem LLM."""
-    return build_obsidian_note(item, fallback_obsidian_body(item))
+    note = fallback_obsidian_body(item)
+    return build_obsidian_note(
+        item,
+        note.body,
+        note_title=note.note_title,
+        folder=note.folder,
+        moc=note.moc,
+    )
 
 
-def note_relative_path(item: NewsItem) -> str:
-    slug = slugify_title(item.title)
-    return str(PurePosixPath(OBSIDIAN_FOLDER) / f"{item.id}-{slug}.md")
+def note_relative_path(
+    item: NewsItem,
+    *,
+    folder: str | None = None,
+    note_title: str | None = None,
+) -> str:
+    slug = slugify_title(note_title or item.title)
+    base = PurePosixPath(OBSIDIAN_FOLDER)
+    if folder and folder != "geral":
+        base = base / folder
+    return str(base / f"{item.id}-{slug}.md")
 
 
 def _encode_vault_path(relative_path: str) -> str:
@@ -182,14 +259,14 @@ async def format_items_for_obsidian(
     *,
     use_agent: bool = True,
     on_progress: ObsidianProgressCallback | None = None,
-) -> list[tuple[NewsItem, str]]:
-    async def format_one(item: NewsItem) -> tuple[NewsItem, str]:
-        body = await generate_obsidian_body(item, use_agent=use_agent, on_progress=on_progress)
-        return item, body
+) -> list[tuple[NewsItem, ObsidianNoteResult]]:
+    async def format_one(item: NewsItem) -> tuple[NewsItem, ObsidianNoteResult]:
+        return item, await generate_obsidian_note(
+            item, use_agent=use_agent, on_progress=on_progress
+        )
 
     if len(items) == 1:
-        item, body = await format_one(items[0])
-        return [(item, body)]
+        return [await format_one(items[0])]
 
     results = await asyncio.gather(*[format_one(item) for item in items])
     return list(results)
@@ -223,11 +300,15 @@ async def export_items_to_obsidian(
 ) -> dict:
     _reload_settings()
     mode = get_obsidian_mode()
-    if mode is None:
+    write_mode = get_obsidian_write_mode()
+    if mode is None or write_mode is None:
         raise RuntimeError(
             "Obsidian não configurado. Defina OBSIDIAN_REST_API_KEY (plugin Local REST API) "
             "ou OBSIDIAN_VAULT_PATH no .env do backend."
         )
+
+    if write_mode == "filesystem" and not _vault_is_configured():
+        raise RuntimeError(f"OBSIDIAN_VAULT_PATH inválido: {OBSIDIAN_VAULT_PATH}")
 
     if mode == "rest":
         connected, message = check_rest_connection()
@@ -242,9 +323,19 @@ async def export_items_to_obsidian(
     for index, item in enumerate(items, start=1):
         progress = _make_obsidian_emit(emit, index, total)
         try:
-            body = await generate_obsidian_body(item, use_agent=True, on_progress=progress)
-            relative_path = note_relative_path(item)
-            markdown = build_obsidian_note(item, body)
+            note = await generate_obsidian_note(item, use_agent=True, on_progress=progress)
+            relative_path = note_relative_path(
+                item,
+                folder=note.folder,
+                note_title=note.note_title,
+            )
+            markdown = build_obsidian_note(
+                item,
+                note.body,
+                note_title=note.note_title,
+                folder=note.folder,
+                moc=note.moc,
+            )
 
             if emit:
                 emit(
@@ -258,7 +349,7 @@ async def export_items_to_obsidian(
                     }
                 )
 
-            if mode == "rest":
+            if write_mode == "rest":
                 _write_via_rest(relative_path, markdown)
             else:
                 _write_via_filesystem(relative_path, markdown)
@@ -281,7 +372,11 @@ async def export_items_to_obsidian(
             if emit:
                 emit({"type": "error", "message": str(exc)})
 
-    if mode == "rest" and exported_paths and OBSIDIAN_OPEN_AFTER_EXPORT:
+    rest_available = False
+    if mode in ("rest", "hybrid") and OBSIDIAN_REST_API_KEY:
+        rest_available, _ = check_rest_connection()
+
+    if rest_available and exported_paths and OBSIDIAN_OPEN_AFTER_EXPORT:
         try:
             _open_in_obsidian(exported_paths[0])
         except Exception as exc:

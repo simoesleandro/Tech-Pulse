@@ -67,6 +67,7 @@ from app.services.obsidian import (
     format_items_for_obsidian,
     get_obsidian_config,
     mark_items_obsidian_exported,
+    _vault_is_configured,
 )
 from app.services.seed import seed_demo_articles
 
@@ -596,12 +597,30 @@ def obsidian_status():
     config = get_obsidian_config()
     connected: bool | None = None
     message: str | None = None
+    mode = config["mode"]
 
-    if config["mode"] == "rest":
+    if mode == "rest":
         connected, message = check_rest_connection()
-    elif config["mode"] == "filesystem":
-        connected = True
-        message = "Gravação direta no vault configurada."
+    elif mode == "filesystem":
+        connected = _vault_is_configured()
+        message = (
+            "Gravação direta no vault configurada."
+            if connected
+            else f"OBSIDIAN_VAULT_PATH inválido ou inacessível."
+        )
+    elif mode == "hybrid":
+        vault_ok = _vault_is_configured()
+        rest_ok, rest_message = check_rest_connection()
+        connected = vault_ok
+        if vault_ok and rest_ok:
+            message = "Vault local + REST API ativos (abrir nota após exportar disponível)."
+        elif vault_ok:
+            message = (
+                "Gravação direta no vault ativa. REST offline — exportações funcionam; "
+                "abrir nota automático indisponível até o Obsidian estar aberto."
+            )
+        else:
+            message = f"OBSIDIAN_VAULT_PATH inválido. {rest_message or ''}".strip()
 
     if not config["configured"]:
         message = (
@@ -631,8 +650,17 @@ async def format_obsidian_notes(payload: ObsidianExportRequest, db: Session = De
 
     formatted = await format_items_for_obsidian(items, use_agent=True)
     result_items = [
-        ObsidianFormattedItem(id=item.id, markdown=build_obsidian_note(item, body))
-        for item, body in formatted
+        ObsidianFormattedItem(
+            id=item.id,
+            markdown=build_obsidian_note(
+                item,
+                note.body,
+                note_title=note.note_title,
+                folder=note.folder,
+                moc=note.moc,
+            ),
+        )
+        for item, note in formatted
     ]
     combined = "\n---\n\n".join(entry.markdown for entry in result_items)
     return ObsidianFormatResult(items=result_items, markdown=combined)
@@ -733,7 +761,7 @@ async def obsidian_backfill(db: Session = Depends(get_db)):
 
 @app.post("/api/backfill/re-enrich", response_model=EnrichBackfillResult)
 async def re_enrich_backfill(
-    limit: int = Query(default=1, ge=1, le=5),
+    limit: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
     return await asyncio.to_thread(re_enrich_legacy_items, db, limit)
@@ -742,7 +770,7 @@ async def re_enrich_backfill(
 @app.post("/api/backfill/re-enrich/stream")
 async def re_enrich_backfill_stream(
     request: Request,
-    limit: int = Query(default=1, ge=1, le=5),
+    limit: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
     def job(emit):
@@ -753,7 +781,7 @@ async def re_enrich_backfill_stream(
 
 @app.post("/api/enrich-backfill", response_model=EnrichBackfillResult)
 async def enrich_backfill(
-    limit: int = Query(default=1, ge=1, le=5),
+    limit: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
     return await asyncio.to_thread(enrich_missing_items, db, limit)
@@ -762,7 +790,7 @@ async def enrich_backfill(
 @app.post("/api/enrich-backfill/stream")
 async def enrich_backfill_stream(
     request: Request,
-    limit: int = Query(default=1, ge=1, le=5),
+    limit: int = Query(default=1, ge=1, le=10),
     db: Session = Depends(get_db),
 ):
     def job(emit):

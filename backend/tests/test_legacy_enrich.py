@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from app.models import NewsItem
 from app.services.ingest import get_backfill_status, needs_agent_refresh, re_enrich_legacy_items
-from app.services.scrapers.base import EnrichedArticle
+from app.services.scrapers.base import EnrichedArticle, RawArticle
 
 
 def _item(**overrides) -> NewsItem:
@@ -53,7 +53,7 @@ def test_get_backfill_status_counts(db_session):
     assert status["obsidian_unmarked"] == 1
 
 
-def _mock_enrich(_article, on_agent_progress=None) -> EnrichedArticle:
+def _mock_enriched(_article: RawArticle) -> EnrichedArticle:
     return EnrichedArticle(
         ai_relevance="RELEVANTE",
         title_pt="Título reprocessado",
@@ -63,12 +63,21 @@ def _mock_enrich(_article, on_agent_progress=None) -> EnrichedArticle:
     )
 
 
+async def _fake_as_completed(articles, factory, skip_triador=False):
+    assert skip_triador is True
+    for index, article in enumerate(articles, start=1):
+        yield index, article, _mock_enriched(article)
+
+
 def test_re_enrich_legacy_items_updates_reasoning(db_session):
     item = _item(ai_reasoning="Resumo antigo do Gemma único.")
     db_session.add(item)
     db_session.commit()
 
-    with patch("app.services.ingest.enrich_article_sync", side_effect=_mock_enrich):
+    with patch(
+        "app.services.ingest.enrich_articles_as_completed",
+        new=_fake_as_completed,
+    ):
         result = re_enrich_legacy_items(db_session, limit=5)
 
     assert result["processed"] == 1
@@ -77,3 +86,21 @@ def test_re_enrich_legacy_items_updates_reasoning(db_session):
     db_session.refresh(item)
     assert "Novidade" in (item.ai_reasoning or "")
     assert item.title == "Título reprocessado"
+
+
+def test_re_enrich_legacy_items_parallel_batch(db_session):
+    items = [
+        _item(url=f"https://example.com/{index}", ai_reasoning="Legado")
+        for index in range(3)
+    ]
+    db_session.add_all(items)
+    db_session.commit()
+
+    with patch(
+        "app.services.ingest.enrich_articles_as_completed",
+        new=_fake_as_completed,
+    ):
+        result = re_enrich_legacy_items(db_session, limit=10)
+
+    assert result["processed"] == 3
+    assert result["remaining"] == 0

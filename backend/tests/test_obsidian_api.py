@@ -2,15 +2,33 @@ from unittest.mock import AsyncMock, patch
 
 
 def test_obsidian_status_unconfigured(client, monkeypatch):
-    monkeypatch.setattr("app.services.obsidian._reload_settings", lambda: None)
-    monkeypatch.setattr("app.services.obsidian.OBSIDIAN_REST_API_KEY", "")
-    monkeypatch.setattr("app.services.obsidian.OBSIDIAN_VAULT_PATH", "")
+    monkeypatch.setattr("app.services.obsidian.get_obsidian_mode", lambda: None)
 
     response = client.get("/api/obsidian/status")
     assert response.status_code == 200
     body = response.json()
     assert body["configured"] is False
     assert "OBSIDIAN" in body["message"]
+
+
+def test_obsidian_status_hybrid_vault_ok_rest_offline(client, monkeypatch):
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as tmp_dir:
+        monkeypatch.setattr("app.services.obsidian._reload_settings", lambda: None)
+        monkeypatch.setattr("app.services.obsidian.OBSIDIAN_REST_API_KEY", "test-key")
+        monkeypatch.setattr("app.services.obsidian.OBSIDIAN_VAULT_PATH", tmp_dir)
+        monkeypatch.setattr(
+            "app.main.check_rest_connection",
+            lambda: (False, "REST offline"),
+        )
+
+        response = client.get("/api/obsidian/status")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["mode"] == "hybrid"
+        assert body["connected"] is True
+        assert "REST offline" in body["message"]
 
 
 def test_obsidian_format_endpoint(client):
@@ -44,9 +62,7 @@ def test_obsidian_format_endpoint(client):
 
 
 def test_obsidian_export_requires_config(client, monkeypatch):
-    monkeypatch.setattr("app.services.obsidian._reload_settings", lambda: None)
-    monkeypatch.setattr("app.services.obsidian.OBSIDIAN_REST_API_KEY", "")
-    monkeypatch.setattr("app.services.obsidian.OBSIDIAN_VAULT_PATH", "")
+    monkeypatch.setattr("app.services.obsidian.get_obsidian_mode", lambda: None)
 
     create = client.post(
         "/api/news",

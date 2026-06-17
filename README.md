@@ -231,7 +231,7 @@ Endpoints para sincronizar estado antigo com o pipeline atual:
 |----------|-----------|
 | `GET /api/backfill/status` | Contadores pendentes |
 | `POST /api/backfill/obsidian` | Marca `obsidian_exported_at` para notas já no vault |
-| `POST /api/backfill/re-enrich?limit=5` | Reprocessa itens legados (triador → tradutor → hype) |
+| `POST /api/backfill/re-enrich?limit=10` | Reprocessa itens legados em paralelo (tradutor → hype) |
 
 **PowerShell** (não use `curl -X`; use `Invoke-RestMethod`):
 
@@ -239,9 +239,9 @@ Endpoints para sincronizar estado antigo com o pipeline atual:
 # Status
 Invoke-RestMethod -Uri "http://localhost:8000/api/backfill/status"
 
-# Re-enriquecer até remaining = 0 (~6–10 min por lote de 5)
+# Re-enriquecer até remaining = 0 (~15–25 min com lotes de 10, paralelo)
 do {
-  $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/backfill/re-enrich?limit=5"
+  $r = Invoke-RestMethod -Method Post -Uri "http://localhost:8000/api/backfill/re-enrich?limit=10"
   $r | Format-List
 } while ($r.remaining -gt 0)
 ```

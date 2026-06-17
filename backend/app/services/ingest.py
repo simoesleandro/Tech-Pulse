@@ -360,6 +360,113 @@ def run_ingest(
     return stats
 
 
+def _prepare_raw_article(item: NewsItem) -> RawArticle:
+    raw = item_to_raw_article(item)
+    if not raw.description_snippet and item.description:
+        return RawArticle(
+            title=raw.title,
+            url=raw.url,
+            source=raw.source,
+            description_snippet=item.description,
+            positive_reactions=item.engagement_reactions,
+            comments_count=item.engagement_comments,
+            stars=item.engagement_stars,
+            ups=item.engagement_ups,
+        )
+    return raw
+
+
+def _apply_enriched_to_item(
+    item: NewsItem,
+    raw: RawArticle,
+    enriched: EnrichedArticle,
+) -> None:
+    item.title = enriched.title_pt
+    item.title_original = raw.title
+    item.description = enriched.description_pt
+    item.ai_relevance = enriched.ai_relevance
+    item.ai_reasoning = enriched.ai_reasoning
+    apply_engagement_from_article(item, raw)
+    item.hype_score = resolve_hype_score(enriched.hype_score, raw)
+    if item.hype_score == 0:
+        refresh_item_hype(item)
+    item.is_enriched = True
+
+
+async def _parallel_enrich_items(
+    pairs: list[tuple[NewsItem, RawArticle]],
+    on_progress: ProgressEmitter | None,
+    *,
+    skip_triador: bool = False,
+) -> list[tuple[NewsItem, RawArticle, EnrichedArticle | Exception]]:
+    if not pairs:
+        return []
+
+    articles = [raw for _, raw in pairs]
+    item_by_url = {item.url: item for item, _ in pairs}
+    total = len(pairs)
+
+    emit_step(on_progress, "pick", "active", f"{total} selecionado(s)")
+
+    def factory(index: int, count: int) -> AgentProgressCallback:
+        return _agent_progress_factory(on_progress, index, count)
+
+    outcomes: list[tuple[NewsItem, RawArticle, EnrichedArticle | Exception]] = []
+    async for _index, article, outcome in enrich_articles_as_completed(
+        articles,
+        factory,
+        skip_triador=skip_triador,
+    ):
+        _raise_if_cancelled()
+        item = item_by_url[article.url]
+        emit_step(on_progress, "pick", "done", article.title[:80])
+        outcomes.append((item, article, outcome))
+
+    return outcomes
+
+
+def _run_parallel_item_enrichment(
+    db: Session,
+    pairs: list[tuple[NewsItem, RawArticle]],
+    on_progress: ProgressEmitter | None,
+    *,
+    skip_triador: bool = False,
+) -> tuple[int, int, list[str]]:
+    processed = 0
+    errors = 0
+    error_messages: list[str] = []
+
+    async def _run() -> None:
+        nonlocal processed, errors
+        outcomes = await _parallel_enrich_items(
+            pairs,
+            on_progress,
+            skip_triador=skip_triador,
+        )
+        for item, article, outcome in outcomes:
+            if isinstance(outcome, Exception):
+                errors += 1
+                detail = outcome if str(outcome).strip() else repr(outcome)
+                error_messages.append(f"{article.url}: {detail}")
+                logger.warning("Backfill enrich failed for %s: %s", article.url, detail)
+                continue
+
+            try:
+                emit_step(on_progress, "save", "active", article.title[:80])
+                _apply_enriched_to_item(item, article, outcome)
+                db.commit()
+                emit_step(on_progress, "save", "done", outcome.title_pt[:80])
+                processed += 1
+            except Exception as exc:
+                db.rollback()
+                errors += 1
+                error_messages.append(f"{article.url}: {exc}")
+                logger.warning("Backfill persist failed for %s: %s", article.url, exc)
+
+    asyncio.run(_run())
+    return processed, errors, error_messages
+
+
 def enrich_missing_items(
     db: Session,
     limit: int = 1,
@@ -378,63 +485,38 @@ def enrich_missing_items(
         .limit(limit)
     ).all()
 
+    hype_only = [item for item in items if item.is_enriched and item.hype_score == 0]
+    enrich_pairs = [
+        (item, _prepare_raw_article(item))
+        for item in items
+        if not (item.is_enriched and item.hype_score == 0)
+    ]
+
     processed = 0
     errors = 0
     error_messages: list[str] = []
 
-    emit_step(on_progress, "pick", "active", f"{len(items)} selecionado(s)")
-
-    for index, item in enumerate(items, start=1):
+    for item in hype_only:
         try:
-            if item.is_enriched and item.hype_score == 0:
-                emit_step(on_progress, "hype", "active", "recalculando hype")
-                refresh_item_hype(item)
-                db.commit()
-                emit_step(on_progress, "hype", "done", f"{item.hype_score} estrelas")
-                processed += 1
-                continue
-
-            raw = item_to_raw_article(item)
-            if not raw.description_snippet and item.description:
-                raw = RawArticle(
-                    title=raw.title,
-                    url=raw.url,
-                    source=raw.source,
-                    description_snippet=item.description,
-                    positive_reactions=item.engagement_reactions,
-                    comments_count=item.engagement_comments,
-                    stars=item.engagement_stars,
-                    ups=item.engagement_ups,
-                )
-
-            emit_step(on_progress, "pick", "done", raw.title[:80])
-
-            enriched = _enrich_with_progress(
-                raw,
-                on_progress,
-                article_index=index,
-                article_total=len(items),
-            )
-
-            emit_step(on_progress, "save", "active", raw.title[:80])
-            item.title = enriched.title_pt
-            item.title_original = raw.title
-            item.description = enriched.description_pt
-            item.ai_relevance = enriched.ai_relevance
-            item.ai_reasoning = enriched.ai_reasoning
-            apply_engagement_from_article(item, raw)
-            item.hype_score = resolve_hype_score(enriched.hype_score, raw)
-            if item.hype_score == 0:
-                refresh_item_hype(item)
-            item.is_enriched = True
+            emit_step(on_progress, "hype", "active", "recalculando hype")
+            refresh_item_hype(item)
             db.commit()
-            emit_step(on_progress, "save", "done", enriched.title_pt[:80])
+            emit_step(on_progress, "hype", "done", f"{item.hype_score} estrelas")
             processed += 1
         except Exception as exc:
             db.rollback()
             errors += 1
             error_messages.append(f"{item.url}: {exc}")
-            logger.warning("Backfill failed for %s: %s", item.url, exc)
+
+    batch_processed, batch_errors, batch_messages = _run_parallel_item_enrichment(
+        db,
+        enrich_pairs,
+        on_progress,
+        skip_triador=False,
+    )
+    processed += batch_processed
+    errors += batch_errors
+    error_messages.extend(batch_messages)
 
     remaining = _count_pending(db)
 
@@ -449,7 +531,7 @@ def enrich_missing_items(
 
 def re_enrich_legacy_items(
     db: Session,
-    limit: int = 5,
+    limit: int = 10,
     on_progress: ProgressEmitter | None = None,
 ) -> dict[str, int]:
     candidates_before = _count_legacy_enrichment(db)
@@ -461,55 +543,13 @@ def re_enrich_legacy_items(
     ).all()
     items = [item for item in all_candidates if needs_agent_refresh(item)][:limit]
 
-    processed = 0
-    errors = 0
-    error_messages: list[str] = []
-
-    emit_step(on_progress, "pick", "active", f"{len(items)} legado(s) selecionado(s)")
-
-    for index, item in enumerate(items, start=1):
-        try:
-            raw = item_to_raw_article(item)
-            if not raw.description_snippet and item.description:
-                raw = RawArticle(
-                    title=raw.title,
-                    url=raw.url,
-                    source=raw.source,
-                    description_snippet=item.description,
-                    positive_reactions=item.engagement_reactions,
-                    comments_count=item.engagement_comments,
-                    stars=item.engagement_stars,
-                    ups=item.engagement_ups,
-                )
-
-            emit_step(on_progress, "pick", "done", raw.title[:80])
-
-            enriched = _enrich_with_progress(
-                raw,
-                on_progress,
-                article_index=index,
-                article_total=len(items),
-            )
-
-            emit_step(on_progress, "save", "active", raw.title[:80])
-            item.title = enriched.title_pt
-            item.title_original = raw.title
-            item.description = enriched.description_pt
-            item.ai_relevance = enriched.ai_relevance
-            item.ai_reasoning = enriched.ai_reasoning
-            apply_engagement_from_article(item, raw)
-            item.hype_score = resolve_hype_score(enriched.hype_score, raw)
-            if item.hype_score == 0:
-                refresh_item_hype(item)
-            item.is_enriched = True
-            db.commit()
-            emit_step(on_progress, "save", "done", enriched.title_pt[:80])
-            processed += 1
-        except Exception as exc:
-            db.rollback()
-            errors += 1
-            error_messages.append(f"{item.url}: {exc}")
-            logger.warning("Legacy re-enrich failed for %s: %s", item.url, exc)
+    enrich_pairs = [(item, _prepare_raw_article(item)) for item in items]
+    processed, errors, error_messages = _run_parallel_item_enrichment(
+        db,
+        enrich_pairs,
+        on_progress,
+        skip_triador=True,
+    )
 
     remaining = _count_legacy_enrichment(db)
 

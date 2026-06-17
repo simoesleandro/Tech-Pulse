@@ -24,11 +24,16 @@ export function ObsidianStatusBanner() {
     const modeLabel =
       status.mode === "filesystem"
         ? "gravação direta no vault"
-        : `REST API (${status.mode})`;
+        : status.mode === "hybrid"
+          ? "híbrido (vault + REST)"
+          : `REST API (${status.mode})`;
     return (
       <p className="font-mono text-[10px] text-emerald">
         Obsidian conectado — {modeLabel} · pasta{" "}
         <span className="text-cyan">{status.folder}/</span>
+        {status.mode === "hybrid" && status.message?.includes("REST offline") ? (
+          <span className="ml-2 text-amber-300">· REST offline</span>
+        ) : null}
       </p>
     );
   }

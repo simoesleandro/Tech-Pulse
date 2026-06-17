@@ -50,7 +50,17 @@ def test_parse_hype_json_legacy_without_rubric():
     raw = '{"hype": 4, "reasoning": "Guia prático com alto interesse."}'
     assessment = _parse_hype_response(raw)
     assert assessment.hype == 4
-    assert assessment.reasoning == "Guia prático com alto interesse."
+    assert "Novidade 4" in assessment.reasoning
+    assert "Utilidade 3" in assessment.reasoning
+    assert "Guia prático" in assessment.reasoning
+
+
+def test_parse_hype_non_json_fallback_includes_rubric():
+    raw = "HYPE: 4\nImpacto alto na comunidade."
+    assessment = _parse_hype_response(raw)
+    assert assessment.hype == 4
+    assert "Novidade 4" in assessment.reasoning
+    assert "Utilidade 3" in assessment.reasoning
 
 
 def test_agente_triador_relevante():
@@ -123,7 +133,7 @@ def test_orquestrador_relevante_runs_all_agents():
     assert mock_generate.call_count == 3
 
     hype_call = mock_generate.call_args_list[2]
-    assert hype_call.kwargs.get("options") == {"temperature": 0.15, "num_predict": 256}
+        assert hype_call.kwargs.get("options") == {"temperature": 0.15, "num_predict": 1024}
     hype_prompt = hype_call.args[0]
     assert "Guia de orquestração." in hype_prompt
     assert "Score de engajamento pré-calculado" in hype_prompt

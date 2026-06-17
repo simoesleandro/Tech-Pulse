@@ -92,6 +92,12 @@ export const OBSIDIAN_PIPELINE_STEPS: PipelineStepDef[] = [
     agent: "obsidian-analyze",
   },
   {
+    id: "orchestrate",
+    label: "Orquestrador — título, pasta por assunto e links do grafo…",
+    estimatedSeconds: 25,
+    agent: "obsidian-orchestrator",
+  },
+  {
     id: "render",
     label: "Montando nota Obsidian com callouts e wikilinks…",
     estimatedSeconds: 2,

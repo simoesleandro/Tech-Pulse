@@ -11,7 +11,7 @@ def test_enrich_articles_parallel_processes_batch():
         for index in range(3)
     ]
 
-    async def fake_orquestrador(article, on_agent_progress=None):
+    async def fake_orquestrador(article, on_agent_progress=None, **kwargs):
         from app.services.scrapers.base import EnrichedArticle
 
         return EnrichedArticle(

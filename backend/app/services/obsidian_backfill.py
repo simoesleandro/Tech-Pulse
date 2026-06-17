@@ -35,7 +35,7 @@ def _discover_from_filesystem() -> dict[int, datetime]:
         return {}
 
     discovered: dict[int, datetime] = {}
-    for path in folder.glob("*.md"):
+    for path in folder.rglob("*.md"):
         item_ids: set[int] = set()
 
         filename_match = NOTE_FILENAME_PATTERN.match(path.name)

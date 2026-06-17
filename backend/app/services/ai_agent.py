@@ -106,6 +106,14 @@ def _clamp_score(value: object, default: int | None = None) -> int | None:
         return default
 
 
+def _infer_hype_dims(hype: int) -> tuple[int, int, int]:
+    clamped = min(5, max(0, hype))
+    novelty = clamped
+    practicality = min(5, max(0, clamped - 1)) if clamped > 0 else 0
+    community_signal = clamped
+    return novelty, practicality, community_signal
+
+
 def _format_hype_reasoning(
     *,
     reasoning: str,
@@ -170,6 +178,13 @@ def _parse_hype_response(raw: str) -> HypeAssessment:
             novelty = _clamp_score(data.get("novelty"))
             practicality = _clamp_score(data.get("practicality"))
             community_signal = _clamp_score(data.get("community_signal"))
+            if novelty is None or practicality is None or community_signal is None:
+                inferred = _infer_hype_dims(hype)
+                novelty = novelty if novelty is not None else inferred[0]
+                practicality = practicality if practicality is not None else inferred[1]
+                community_signal = (
+                    community_signal if community_signal is not None else inferred[2]
+                )
             reasoning = _format_hype_reasoning(
                 reasoning=str(data.get("reasoning", "")).strip(),
                 novelty=novelty,
@@ -186,11 +201,23 @@ def _parse_hype_response(raw: str) -> HypeAssessment:
         except json.JSONDecodeError:
             pass
 
-    hype_match = re.search(r"HYPE:\s*(\d)", raw, re.IGNORECASE)
-    parsed = min(5, max(0, int(hype_match.group(1)))) if hype_match else 0
+    hype_match = re.search(r'"?hype"?\s*[:=]\s*(\d)', raw, re.IGNORECASE)
+    if not hype_match:
+        hype_match = re.search(r"HYPE:\s*(\d)", raw, re.IGNORECASE)
+    parsed = min(5, max(0, int(hype_match.group(1)))) if hype_match else 3
+    novelty, practicality, community_signal = _infer_hype_dims(parsed)
+    reasoning = _format_hype_reasoning(
+        reasoning="Resposta do modelo sem JSON válido; dimensões estimadas pela nota.",
+        novelty=novelty,
+        practicality=practicality,
+        community_signal=community_signal,
+    )
     return HypeAssessment(
         hype=parsed,
-        reasoning="Classificação legada sem justificativa detalhada.",
+        reasoning=reasoning,
+        novelty=novelty,
+        practicality=practicality,
+        community_signal=community_signal,
     )
 
 
@@ -249,14 +276,20 @@ AgentProgressCallback = Callable[[str, str, str | None], None]
 async def orquestrador_enriquecimento(
     article: RawArticle,
     on_agent_progress: AgentProgressCallback | None = None,
+    *,
+    skip_triador: bool = False,
 ) -> EnrichedArticle:
     def emit(step_id: str, status: str, detail: str | None = None) -> None:
         if on_agent_progress:
             on_agent_progress(step_id, status, detail)
 
-    emit("triador", "active", article.title[:80])
-    relevance = await agente_triador(article)
-    emit("triador", "done", relevance)
+    if skip_triador:
+        relevance = "RELEVANTE"
+        emit("triador", "done", "RELEVANTE (pré-classificado)")
+    else:
+        emit("triador", "active", article.title[:80])
+        relevance = await agente_triador(article)
+        emit("triador", "done", relevance)
 
     if relevance == "LIXO":
         logger.info("[orquestrador] %s barrado no triador — pulando tradutor/hype", article.url)
@@ -288,6 +321,8 @@ async def orquestrador_enriquecimento(
 async def enrich_articles_parallel(
     articles: list[RawArticle],
     on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+    *,
+    skip_triador: bool = False,
 ) -> list[tuple[int, RawArticle, EnrichedArticle | Exception]]:
     total = len(articles)
 
@@ -298,7 +333,9 @@ async def enrich_articles_parallel(
             else None
         )
         try:
-            enriched = await orquestrador_enriquecimento(article, callback)
+            enriched = await orquestrador_enriquecimento(
+                article, callback, skip_triador=skip_triador
+            )
             return index, article, enriched
         except Exception as exc:
             return index, article, exc
@@ -312,6 +349,8 @@ async def enrich_articles_parallel(
 async def enrich_articles_as_completed(
     articles: list[RawArticle],
     on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+    *,
+    skip_triador: bool = False,
 ):
     total = len(articles)
 
@@ -322,7 +361,9 @@ async def enrich_articles_as_completed(
             else None
         )
         try:
-            enriched = await orquestrador_enriquecimento(article, callback)
+            enriched = await orquestrador_enriquecimento(
+                article, callback, skip_triador=skip_triador
+            )
             return index, article, enriched
         except Exception as exc:
             return index, article, exc
@@ -339,5 +380,11 @@ async def enrich_articles_as_completed(
 def enrich_article_sync(
     article: RawArticle,
     on_agent_progress: AgentProgressCallback | None = None,
+    *,
+    skip_triador: bool = False,
 ) -> EnrichedArticle:
-    return asyncio.run(orquestrador_enriquecimento(article, on_agent_progress))
+    return asyncio.run(
+        orquestrador_enriquecimento(
+            article, on_agent_progress, skip_triador=skip_triador
+        )
+    )

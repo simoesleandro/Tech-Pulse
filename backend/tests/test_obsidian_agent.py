@@ -58,6 +58,11 @@ def test_render_obsidian_body_includes_rich_sections():
         "quando_evitar": ["Tarefas determinísticas simples"],
         "perguntas": ["Como versionar prompts?"],
         "wikilinks": ["LLM", "Python", "Ollama"],
+        "titulo_nota": "Orquestração de agentes LLM com Python",
+        "pasta": "ia-llms",
+        "area_label": "IA & LLMs",
+        "moc": "MOC-IA-LLMs",
+        "conexoes": ["[[RAG]]"],
     }
 
     body = render_obsidian_body(_sample_item(), analysis)
@@ -115,10 +120,22 @@ def test_agente_obsidian_two_phase_pipeline():
         "app.services.obsidian_agent.ollama_generate",
         new_callable=AsyncMock,
         side_effect=[summary, json.dumps(analysis)],
-    ) as mock_generate:
-        body = asyncio.run(agente_obsidian(_sample_item()))
+    ) as mock_ollama, patch(
+        "app.services.obsidian_agent.agente_orquestrador_obsidian",
+        new_callable=AsyncMock,
+        return_value={
+            **analysis,
+            "titulo_nota": "Gateway de IA soberano no edge",
+            "pasta": "ia-llms",
+            "area_label": "IA & LLMs",
+            "moc": "MOC-IA-LLMs",
+            "conexoes": ["[[MLOps]]"],
+            "tags_extra": ["ia-local"],
+        },
+    ):
+        note = asyncio.run(agente_obsidian(_sample_item()))
 
-    assert mock_generate.call_count == 2
-    assert "### Soberania" in body
-    assert "## Glossário" in body
-    assert "leia a fonte original" not in body.lower()
+    assert mock_ollama.call_count == 2
+    assert "### Soberania" in note.body
+    assert "## Mapa de conhecimento" in note.body
+    assert "[[MOC-IA-LLMs]]" in note.body

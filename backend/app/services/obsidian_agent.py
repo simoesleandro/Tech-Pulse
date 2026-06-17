@@ -2,14 +2,24 @@ import json
 import logging
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from app.models import NewsItem
 from app.services.article_content import fetch_article_context
+from app.services.obsidian_orchestrator import agente_orquestrador_obsidian, fallback_orchestration
 from app.services.ollama_client import ollama_generate
 
 logger = logging.getLogger(__name__)
 
 ObsidianProgressCallback = Callable[[str, str, str | None], None]
+
+
+@dataclass(frozen=True)
+class ObsidianNoteResult:
+    body: str
+    note_title: str
+    folder: str
+    moc: str
 
 OBSIDIAN_SUMMARIZE_SYSTEM = (
     "Você é um analista técnico sênior. Extraia conhecimento denso e concreto de artigos de tecnologia. "
@@ -219,6 +229,7 @@ def _analysis_from_summary(summary: str, item: NewsItem) -> dict:
 
 
 def render_obsidian_body(item: NewsItem, analysis: dict) -> str:
+    note_title = str(analysis.get("titulo_nota", "")).strip() or item.title
     tema = str(analysis.get("tema", "")).strip() or item.description.strip()
     problema = str(analysis.get("problema", "")).strip()
     solucao = str(analysis.get("solucao", "")).strip()
@@ -231,14 +242,20 @@ def render_obsidian_body(item: NewsItem, analysis: dict) -> str:
     when_avoid = _as_list(analysis.get("quando_evitar"))
     questions = _as_list(analysis.get("perguntas"))
     wikilinks = [_wikilink_name(name) for name in _as_list(analysis.get("wikilinks"))]
+    conexoes = _as_list(analysis.get("conexoes"))
+    moc = str(analysis.get("moc", "")).strip()
+    area_label = str(analysis.get("area_label", "")).strip()
 
     lines = [
-        f"# {item.title}",
+        f"# {note_title}",
         "",
         "> [!abstract] O que é",
         f"> {tema}",
         "",
     ]
+
+    if area_label:
+        lines.extend(["> [!note] Área de conhecimento", f"> {area_label}", ""])
 
     if problema:
         lines.extend(["> [!question] Problema que aborda", f"> {problema}", ""])
@@ -296,6 +313,17 @@ def render_obsidian_body(item: NewsItem, analysis: dict) -> str:
             lines.append(f"- [[{name}]]")
         lines.append("")
 
+    if conexoes or moc:
+        lines.extend(["## Mapa de conhecimento", ""])
+        if moc:
+            lines.append(f"- Índice da área: [[{moc}]]")
+        for link in conexoes[:6]:
+            if link.startswith("[[") and link.endswith("]]"):
+                lines.append(f"- Relacionado: {link}")
+            else:
+                lines.append(f"- Relacionado: [[{_wikilink_name(link)}]]")
+        lines.append("")
+
     reasoning = (item.ai_reasoning or "").strip()
     lines.extend(["> [!info] Avaliação Tech-Pulse", f"> **Hype:** {item.hype_score}/5"])
     if reasoning:
@@ -328,7 +356,7 @@ def _emit(callback: ObsidianProgressCallback | None, step_id: str, status: str, 
 async def agente_obsidian(
     item: NewsItem,
     on_progress: ObsidianProgressCallback | None = None,
-) -> str:
+) -> ObsidianNoteResult:
     _emit(on_progress, "fetch", "active", "Buscando artigo na fonte…")
     context, body_chars = fetch_article_context(item)
     if body_chars > 0:
@@ -385,24 +413,56 @@ async def agente_obsidian(
 
         if analysis:
             _emit(on_progress, "analyze", "done", f"{len(_as_topics(analysis.get('topicos')))} tópicos estruturados")
+            _emit(on_progress, "orchestrate", "active", "Organizando título, pasta e links…")
+            analysis = await agente_orquestrador_obsidian(item, analysis)
+            _emit(
+                on_progress,
+                "orchestrate",
+                "done",
+                f"{analysis.get('pasta')} · {analysis.get('titulo_nota', '')[:50]}",
+            )
             _emit(on_progress, "render", "active", "Montando nota Obsidian…")
             body = render_obsidian_body(item, analysis)
             _emit(on_progress, "render", "done", f"{len(body):,} caracteres")
             logger.info("[obsidian-agent] %s → nota rica (%d chars)", item.url, len(body))
-            return body
+            return ObsidianNoteResult(
+                body=body,
+                note_title=str(analysis.get("titulo_nota", item.title)),
+                folder=str(analysis.get("pasta", "geral")),
+                moc=str(analysis.get("moc", "MOC-Tech-Pulse")),
+            )
 
         logger.warning("[obsidian-agent] JSON inválido para %s — usando resumo direto", item.url)
     except Exception as exc:
         logger.warning("[obsidian-agent] analyze failed for %s: %s", item.url, exc)
 
     _emit(on_progress, "analyze", "done", "Fallback a partir do resumo técnico")
+    fallback_analysis = _analysis_from_summary(summary, item)
+    _emit(on_progress, "orchestrate", "active", "Organizando título, pasta e links…")
+    fallback_analysis = await agente_orquestrador_obsidian(item, fallback_analysis)
+    _emit(on_progress, "orchestrate", "done", str(fallback_analysis.get("pasta", "geral")))
     _emit(on_progress, "render", "active", "Montando nota Obsidian…")
-    body = render_obsidian_body(item, _analysis_from_summary(summary, item))
+    body = render_obsidian_body(item, fallback_analysis)
     _emit(on_progress, "render", "done", f"{len(body):,} caracteres")
-    return body
+    return ObsidianNoteResult(
+        body=body,
+        note_title=str(fallback_analysis.get("titulo_nota", item.title)),
+        folder=str(fallback_analysis.get("pasta", "geral")),
+        moc=str(fallback_analysis.get("moc", "MOC-Tech-Pulse")),
+    )
 
 
-def fallback_obsidian_body(item: NewsItem) -> str:
+def fallback_obsidian_body(item: NewsItem) -> ObsidianNoteResult:
     context, _ = fetch_article_context(item)
     analysis = _analysis_from_summary(context, item)
-    return render_obsidian_body(item, analysis)
+    orchestrated = fallback_orchestration(item, analysis)
+    from app.services.obsidian_orchestrator import merge_orchestration
+
+    merged = merge_orchestration(analysis, orchestrated)
+    body = render_obsidian_body(item, merged)
+    return ObsidianNoteResult(
+        body=body,
+        note_title=str(merged.get("titulo_nota", item.title)),
+        folder=str(merged.get("pasta", "geral")),
+        moc=str(merged.get("moc", "MOC-Tech-Pulse")),
+    )
