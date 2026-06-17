@@ -29,6 +29,7 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       className={`${jetbrainsMono.variable} ${ibmPlexSans.variable} h-full`}
+      suppressHydrationWarning
     >
       <body className="min-h-full bg-slate-dark text-foreground antialiased">
         {children}

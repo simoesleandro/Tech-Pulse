@@ -1,12 +1,15 @@
 function getApiBase(): string {
   if (typeof window !== "undefined") {
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (envUrl) return envUrl;
-
     const hostname = window.location.hostname;
+
     if (hostname && hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return `http://${hostname}:8000`;
+      if (!envUrl || envUrl.includes("localhost") || envUrl.includes("127.0.0.1")) {
+        return `http://${hostname}:8000`;
+      }
     }
+
+    if (envUrl) return envUrl;
   }
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
