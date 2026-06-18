@@ -245,6 +245,8 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     try {
       await action();
       router.refresh();
+    } catch (err) {
+      setActionMessage("Erro na ação em lote: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsBusy(false);
       setBusyAction(null);

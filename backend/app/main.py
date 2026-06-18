@@ -155,7 +155,7 @@ async def _ingest_loop() -> None:
 
         db = SessionLocal()
         try:
-            stats = run_ingest(db)
+            stats = await asyncio.to_thread(run_ingest, db)
             logger.info("Background ingest finished: %s", stats)
         except Exception:
             logger.exception("Background ingest failed")
