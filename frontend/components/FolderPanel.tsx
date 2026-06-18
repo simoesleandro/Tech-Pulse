@@ -99,7 +99,7 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
           </p>
         </div>
 
-        <form onSubmit={(event) => void handleCreateFolder(event)} className="flex w-full max-w-sm gap-2">
+        <form onSubmit={(event) => void handleCreateFolder(event)} className="flex w-full max-w-sm gap-2" suppressHydrationWarning>
           <input
             type="text"
             value={newFolderName}
@@ -107,6 +107,7 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
             placeholder="Nova pasta…"
             disabled={isCreating}
             className="flex-1 rounded-md border border-border bg-slate-dark px-3 py-2 text-sm text-foreground placeholder:text-muted focus:border-cyan/50 focus:outline-none"
+            suppressHydrationWarning
           />
           <button
             type="submit"

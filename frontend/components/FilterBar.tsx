@@ -90,7 +90,7 @@ function SearchField() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2" suppressHydrationWarning>
       <p className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
         Buscar no feed
       </p>
@@ -101,6 +101,7 @@ function SearchField() {
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Título, descrição, tecnologia…"
           className="min-w-0 flex-1 rounded-md border border-border bg-slate-dark px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted/60 focus:border-cyan/50 focus:outline-none"
+          suppressHydrationWarning
         />
         <button
           type="submit"
