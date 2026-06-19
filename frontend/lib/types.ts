@@ -70,6 +70,7 @@ export type PipelineStepEvent =
       detail?: string;
       article_index?: number;
       article_total?: number;
+      title?: string;
     }
   | {
       type: "complete";

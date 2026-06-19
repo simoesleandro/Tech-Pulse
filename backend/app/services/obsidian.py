@@ -307,6 +307,7 @@ def _make_obsidian_emit(
     emit: Callable[[dict], None] | None,
     article_index: int,
     article_total: int,
+    title: str,
 ) -> ObsidianProgressCallback:
     def callback(step_id: str, status: str, detail: str | None = None) -> None:
         if emit is None:
@@ -317,6 +318,7 @@ def _make_obsidian_emit(
             "status": status,
             "article_index": article_index,
             "article_total": article_total,
+            "title": title,
         }
         if detail:
             event["detail"] = detail
@@ -368,7 +370,7 @@ async def export_items_to_obsidian(
         async with semaphore:
             if _is_cancelled():
                 return
-            progress = _make_obsidian_emit(emit, index, total)
+            progress = _make_obsidian_emit(emit, index, total, item.title)
             try:
                 note = await generate_obsidian_note(item, use_agent=True, on_progress=progress)
                 relative_path = note_relative_path(
