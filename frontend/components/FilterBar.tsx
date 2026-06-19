@@ -16,6 +16,7 @@ import type { FeedView } from "@/lib/types";
 
 const VIEWS: { id: FeedView; label: string }[] = [
   { id: "queue", label: "Fila" },
+  { id: "obsidian", label: "Obsidian" },
   { id: "read", label: "Lidas" },
   { id: "saved", label: "Salvos" },
   { id: "lixo", label: "Lixo" },
@@ -304,6 +305,10 @@ export function FilterBar() {
           const isActive = activeView === view.id;
           const params = new URLSearchParams(searchParams.toString());
           params.set("view", view.id);
+          params.delete("page");
+          if (view.id === "queue" || view.id === "obsidian") {
+            params.delete("obsidian");
+          }
           const href = `${pathname}?${params.toString()}`;
 
           return (

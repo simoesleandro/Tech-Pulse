@@ -17,6 +17,12 @@ test.describe("Filtros e layout", () => {
     await expect(page).toHaveURL(/view=lixo/);
   });
 
+  test("aba Obsidian atualiza URL", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "Obsidian" }).click();
+    await expect(page).toHaveURL(/view=obsidian/);
+  });
+
   test("busca no feed expõe campo acessível", async ({ page }) => {
     await page.goto("/");
 

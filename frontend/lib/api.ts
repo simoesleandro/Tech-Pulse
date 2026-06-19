@@ -135,9 +135,15 @@ function viewToFilters(
     filters.ai_relevance = "RELEVANTE";
   } else if (view === "lixo") {
     filters.ai_relevance = "LIXO";
+  } else if (view === "obsidian") {
+    filters.ai_relevance = "RELEVANTE";
+    filters.obsidian_exported = true;
   } else {
     filters.is_read = false;
     filters.ai_relevance = "RELEVANTE";
+    if (extra?.obsidian_exported === undefined) {
+      filters.obsidian_exported = false;
+    }
   }
 
   if (folderId !== undefined) {
@@ -177,7 +183,11 @@ export const getFeedPage = cache(
 );
 
 export const getUnreadCount = cache(async (): Promise<number> => {
-  return fetchNewsCount({ is_read: false, ai_relevance: "RELEVANTE" });
+  return fetchNewsCount({
+    is_read: false,
+    ai_relevance: "RELEVANTE",
+    obsidian_exported: false,
+  });
 });
 
 export async function fetchFolders(): Promise<TopicFolder[]> {

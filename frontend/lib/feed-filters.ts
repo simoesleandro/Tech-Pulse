@@ -26,9 +26,9 @@ export const HYPE_FILTERS = [
 ] as const;
 
 export const OBSIDIAN_FILTERS = [
-  { id: "", label: "Obsidian: todos" },
+  { id: "", label: "Só novas (padrão)" },
+  { id: "exported", label: "Ver só exportadas na fila" },
   { id: "pending", label: "Pendente export" },
-  { id: "exported", label: "Já exportado" },
 ] as const;
 
 /** Chips de assunto/stack — buscam em título e descrição via parâmetro `q`. */

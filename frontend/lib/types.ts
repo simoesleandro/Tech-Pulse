@@ -48,7 +48,7 @@ export interface NewsListResponse {
   offset: number;
 }
 
-export type FeedView = "queue" | "read" | "saved" | "lixo";
+export type FeedView = "queue" | "read" | "saved" | "obsidian" | "lixo";
 
 export interface PipelineStep {
   id: string;

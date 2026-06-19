@@ -21,6 +21,11 @@ const COPY: Record<FeedView, { title: string; body: string; filteredBody: string
     body: "Use o ícone de favorito em um artigo para guardá-lo nesta lista.",
     filteredBody: "Nenhum artigo salvo corresponde aos filtros ativos.",
   },
+  obsidian: {
+    title: "Vault vazio",
+    body: "Notas exportadas ao Obsidian aparecem aqui. Use Exportar no card ou no painel Sistema.",
+    filteredBody: "Nenhuma nota exportada corresponde aos filtros ativos.",
+  },
   lixo: {
     title: "Nada descartado",
     body: "Artigos classificados como LIXO pelo triador aparecem aqui para revisão.",
