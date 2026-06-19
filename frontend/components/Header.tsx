@@ -1,3 +1,5 @@
+import { UnreadCount } from "@/components/UnreadCount";
+
 interface HeaderProps {
   unreadCount: number;
 }
@@ -18,10 +20,7 @@ export function Header({ unreadCount }: HeaderProps) {
           </p>
         </div>
         <div className="flex items-baseline gap-2 font-mono text-sm">
-          <span className="text-3xl font-semibold tabular-nums text-cyan">
-            {unreadCount}
-          </span>
-          <span className="text-muted">não lidas</span>
+          <UnreadCount initialCount={unreadCount} />
         </div>
       </div>
     </header>

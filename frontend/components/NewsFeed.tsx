@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -16,6 +15,10 @@ import {
   patchReadStatus,
   assignNewsFolder,
 } from "@/lib/api";
+import {
+  dispatchFeedMutation,
+  shouldRemoveFromFeedView,
+} from "@/lib/feed-mutations";
 import type { FeedView, NewsItem, TopicFolder } from "@/lib/types";
 
 interface NewsFeedProps {
@@ -27,8 +30,8 @@ interface NewsFeedProps {
 }
 
 export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedProps) {
-  const router = useRouter();
   const [items, setItems] = useState(initialItems);
+  const [feedTotal, setFeedTotal] = useState(total);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -108,8 +111,9 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   useEffect(() => {
     if (!isTriageMode) {
       setItems(initialItems);
+      setFeedTotal(total);
     }
-  }, [itemIdsKey, initialItems, isTriageMode]);
+  }, [itemIdsKey, initialItems, isTriageMode, total]);
 
   useEffect(() => {
     setSelectedIds([]);
@@ -213,19 +217,33 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   }
 
   function handleUpdate(updated: NewsItem) {
-    setItems((current) =>
-      current.map((item) => (item.id === updated.id ? updated : item)),
-    );
-    if (activeDetailItem?.id === updated.id) {
-      setActiveDetailItem(updated);
+    let removed = false;
+    setItems((current) => {
+      if (shouldRemoveFromFeedView(updated, view)) {
+        removed = true;
+        return current.filter((item) => item.id !== updated.id);
+      }
+      return current.map((item) => (item.id === updated.id ? updated : item));
+    });
+    if (removed) {
+      setFeedTotal((current) => Math.max(0, current - 1));
     }
-    router.refresh();
+    if (activeDetailItem?.id === updated.id) {
+      setActiveDetailItem(
+        shouldRemoveFromFeedView(updated, view) ? null : updated,
+      );
+    }
+    dispatchFeedMutation();
   }
 
   function handleRemove(id: number) {
     setItems((current) => current.filter((item) => item.id !== id));
     setSelectedIds((current) => current.filter((itemId) => itemId !== id));
-    router.refresh();
+    setFeedTotal((current) => Math.max(0, current - 1));
+    if (activeDetailItem?.id === id) {
+      setActiveDetailItem(null);
+    }
+    dispatchFeedMutation();
   }
 
   function handleToggleSelect(id: number) {
@@ -245,7 +263,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     setActionMessage(null);
     try {
       await action();
-      router.refresh();
+      dispatchFeedMutation();
     } catch (err) {
       setActionMessage("Erro na ação em lote: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -265,6 +283,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     void runBulkAction("delete", async () => {
       await bulkDeleteNews(ids);
       setItems((current) => current.filter((item) => !ids.includes(item.id)));
+      setFeedTotal((current) => Math.max(0, current - ids.length));
       setSelectedIds([]);
     });
   }
@@ -276,11 +295,17 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     }
     void runBulkAction(isRead ? "read" : "unread", async () => {
       await bulkUpdateNews({ ids, is_read: isRead });
-      setItems((current) =>
-        current.map((item) =>
+      setItems((current) => {
+        const updated = current.map((item) =>
           ids.includes(item.id) ? { ...item, is_read: isRead } : item,
-        ),
-      );
+        );
+        const next = updated.filter((item) => !shouldRemoveFromFeedView(item, view));
+        const removed = updated.length - next.length;
+        if (removed > 0) {
+          setFeedTotal((totalCount) => Math.max(0, totalCount - removed));
+        }
+        return next;
+      });
     });
   }
 
@@ -291,8 +316,8 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     }
     void runBulkAction(isBookmarked ? "bookmark" : "unbookmark", async () => {
       await bulkUpdateNews({ ids, is_bookmarked: isBookmarked });
-      setItems((current) =>
-        current.map((item) =>
+      setItems((current) => {
+        const updated = current.map((item) =>
           ids.includes(item.id)
             ? {
                 ...item,
@@ -301,8 +326,14 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
                 folder_name: isBookmarked ? item.folder_name : null,
               }
             : item,
-        ),
-      );
+        );
+        const next = updated.filter((item) => !shouldRemoveFromFeedView(item, view));
+        const removed = updated.length - next.length;
+        if (removed > 0) {
+          setFeedTotal((totalCount) => Math.max(0, totalCount - removed));
+        }
+        return next;
+      });
     });
   }
 
@@ -373,18 +404,33 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   }) {
     const exportedAt = new Date().toISOString();
     const exportedSet = new Set(result.exported_ids ?? []);
-    setItems((current) =>
-      current.map((item) => {
-        if (!exportedSet.has(item.id)) {
-          return item;
-        }
-        return {
-          ...item,
-          obsidian_exported_at: exportedAt,
-          is_read: exportMarkReadOnComplete ? true : item.is_read,
-        };
-      }),
-    );
+    let removedCount = 0;
+
+    setItems((current) => {
+      const next = current
+        .map((item) => {
+          if (!exportedSet.has(item.id)) {
+            return item;
+          }
+          const updated = {
+            ...item,
+            obsidian_exported_at: exportedAt,
+            is_read: exportMarkReadOnComplete ? true : item.is_read,
+          };
+          if (shouldRemoveFromFeedView(updated, view)) {
+            removedCount += 1;
+            return null;
+          }
+          return updated;
+        })
+        .filter((item): item is NewsItem => item !== null);
+      return next;
+    });
+
+    if (removedCount > 0) {
+      setFeedTotal((current) => Math.max(0, current - removedCount));
+    }
+
     if (exportMarkReadOnComplete && result.exported_ids?.length) {
       try {
         await bulkUpdateNews({ ids: result.exported_ids, is_read: true });
@@ -398,7 +444,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
         : `${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`,
     );
     setExportMarkReadOnComplete(false);
-    router.refresh();
+    dispatchFeedMutation();
   }
 
   function handleObsidianExport(ids: number[]) {
@@ -504,7 +550,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
       </ul>
 
       <Suspense fallback={null}>
-        <FeedPagination total={total} page={page} />
+        <FeedPagination total={feedTotal} page={page} />
       </Suspense>
 
       <BulkActionBar

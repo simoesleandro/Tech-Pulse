@@ -154,6 +154,19 @@ npm run dev
 
 Abra `http://localhost:3000`
 
+### Docker Compose (opcional)
+
+Stack local com API + dashboard (SQLite efêmero dentro do container):
+
+```bash
+docker compose up --build
+```
+
+- API: `http://localhost:8000`
+- Dashboard: `http://localhost:3000`
+
+Para Obsidian/Ollama, configure `backend/.env` antes do build e monte o vault se necessário.
+
 ### Disparar ingestão manual
 
 ```bash
@@ -307,6 +320,8 @@ npm run test:e2e
 - [x] Drawer de detalhe + triagem rápida + digest semanal
 - [ ] Screenshots in README (`docs/screenshot.png`)
 - [ ] Production deploy (Fly.io / Vercel + VPS)
+- [x] Docker Compose local (API + frontend)
+- [x] Atualizações otimistas no feed (sem reload completo)
 
 ---
 
