@@ -30,9 +30,18 @@ export async function apiFetch(
   path: string,
   init?: RequestInit & { timeoutMs?: number },
 ): Promise<Response> {
-  const { timeoutMs = 30_000, ...fetchInit } = init ?? {};
+  const { timeoutMs = 30_000, signal, ...fetchInit } = init ?? {};
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  if (signal) {
+    signal.addEventListener("abort", () => {
+      controller.abort();
+    });
+    if (signal.aborted) {
+      controller.abort();
+    }
+  }
 
   try {
     const response = await fetch(`${API_BASE}${path}`, {

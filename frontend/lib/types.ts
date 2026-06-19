@@ -174,6 +174,8 @@ export interface SourcesSettings {
 
 export interface AppSettings {
   background_ingest_enabled: boolean;
+  obsidian_auto_export: boolean;
+  pipeline_mode: "unified" | "multi-agent";
   sources: SourcesSettings;
 }
 

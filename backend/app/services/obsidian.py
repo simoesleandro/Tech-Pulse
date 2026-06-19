@@ -11,8 +11,10 @@ from urllib.parse import quote
 import httpx
 from dotenv import load_dotenv
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.models import NewsItem
+from app.services.ingest import _is_cancelled
 from app.services.obsidian_agent import (
     ObsidianNoteResult,
     ObsidianProgressCallback,
@@ -326,6 +328,7 @@ def _make_obsidian_emit(
 async def export_items_to_obsidian(
     items: list[NewsItem],
     emit: Callable[[dict], None] | None = None,
+    db: Session | None = None,
 ) -> dict:
     _reload_settings()
     mode = get_obsidian_mode()
@@ -356,57 +359,83 @@ async def export_items_to_obsidian(
     errors: list[str] = []
     total = len(items)
 
-    for index, item in enumerate(items, start=1):
-        progress = _make_obsidian_emit(emit, index, total)
-        try:
-            note = await generate_obsidian_note(item, use_agent=True, on_progress=progress)
-            relative_path = note_relative_path(
-                item,
-                folder=note.folder,
-                note_title=note.note_title,
-            )
-            markdown = build_obsidian_note(
-                item,
-                note.body,
-                note_title=note.note_title,
-                folder=note.folder,
-                moc=note.moc,
-            )
+    # Concurrency control to avoid hitting Groq rate limits too hard
+    concurrency_limit = int(os.getenv("OBSIDIAN_EXPORT_CONCURRENCY", "4"))
+    semaphore = asyncio.Semaphore(concurrency_limit)
+    lock = asyncio.Lock()
 
-            if emit:
-                emit(
-                    {
-                        "type": "step",
-                        "step_id": "write",
-                        "status": "active",
-                        "detail": relative_path,
-                        "article_index": index,
-                        "article_total": total,
-                    }
+    async def export_one(index: int, item: NewsItem):
+        async with semaphore:
+            if _is_cancelled():
+                return
+            progress = _make_obsidian_emit(emit, index, total)
+            try:
+                note = await generate_obsidian_note(item, use_agent=True, on_progress=progress)
+                relative_path = note_relative_path(
+                    item,
+                    folder=note.folder,
+                    note_title=note.note_title,
+                )
+                markdown = build_obsidian_note(
+                    item,
+                    note.body,
+                    note_title=note.note_title,
+                    folder=note.folder,
+                    moc=note.moc,
                 )
 
-            if write_mode == "rest":
-                _write_via_rest(relative_path, markdown)
-            else:
-                _write_via_filesystem(relative_path, markdown)
+                if _is_cancelled():
+                    return
 
-            exported_paths.append(relative_path)
-            exported_ids.append(item.id)
-            if emit:
-                emit(
-                    {
-                        "type": "step",
-                        "step_id": "write",
-                        "status": "done",
-                        "detail": relative_path,
-                        "article_index": index,
-                        "article_total": total,
-                    }
-                )
-        except Exception as exc:
-            errors.append(f"{item.id}: {exc}")
-            if emit:
-                emit({"type": "error", "message": str(exc)})
+                if emit:
+                    emit(
+                        {
+                            "type": "step",
+                            "step_id": "write",
+                            "status": "active",
+                            "detail": relative_path,
+                            "article_index": index,
+                            "article_total": total,
+                        }
+                    )
+
+                if write_mode == "rest":
+                    await asyncio.to_thread(_write_via_rest, relative_path, markdown)
+                else:
+                    await asyncio.to_thread(_write_via_filesystem, relative_path, markdown)
+
+                async with lock:
+                    exported_paths.append(relative_path)
+                    exported_ids.append(item.id)
+                
+                # Commit to database immediately if a session is provided
+                # Lock serialized to prevent SQLAlchemy Session concurrent usage conflicts
+                if db:
+                    try:
+                        async with lock:
+                            await asyncio.to_thread(mark_items_obsidian_exported, db, [item.id])
+                    except Exception as db_exc:
+                        logger.warning("Could not mark item %d as exported: %s", item.id, db_exc)
+
+                if emit:
+                    emit(
+                        {
+                            "type": "step",
+                            "step_id": "write",
+                            "status": "done",
+                            "detail": relative_path,
+                            "article_index": index,
+                            "article_total": total,
+                        }
+                    )
+            except Exception as exc:
+                async with lock:
+                    errors.append(f"{item.id}: {exc}")
+                if emit:
+                    emit({"type": "error", "message": f"Erro na nota {index}: {exc}"})
+
+    tasks = [export_one(index, item) for index, item in enumerate(items, start=1)]
+    await asyncio.gather(*tasks)
 
     rest_available = False
     if mode in ("rest", "hybrid") and OBSIDIAN_REST_API_KEY:

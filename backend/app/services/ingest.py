@@ -34,15 +34,20 @@ logger = logging.getLogger(__name__)
 
 CancelCheck = Callable[[], bool]
 
-_ingest_cancel_flag = threading.local()
+_ingest_cancel_event: threading.Event | None = None
+_cancel_event_lock = threading.Lock()
 
 
 def set_ingest_cancel_event(event: threading.Event | None) -> None:
-    _ingest_cancel_flag.event = event
+    global _ingest_cancel_event
+    with _cancel_event_lock:
+        _ingest_cancel_event = event
 
 
 def _is_cancelled() -> bool:
-    event = getattr(_ingest_cancel_flag, "event", None)
+    global _ingest_cancel_event
+    with _cancel_event_lock:
+        event = _ingest_cancel_event
     return bool(event and event.is_set())
 
 
@@ -181,6 +186,44 @@ def _agent_progress_factory(
     return on_agent_progress
 
 
+async def _background_obsidian_export(item_id: int) -> None:
+    from app.database import SessionLocal
+    from app.services.obsidian import export_items_to_obsidian, mark_items_obsidian_exported
+
+    await asyncio.sleep(0.5)
+
+    db = SessionLocal()
+    try:
+        from app.models import NewsItem
+        from sqlalchemy import select
+
+        item = db.scalar(select(NewsItem).where(NewsItem.id == item_id))
+        if item and item.ai_relevance == "RELEVANTE" and item.obsidian_exported_at is None:
+            logger.info("Auto-exporting item %d to Obsidian...", item_id)
+            result = await export_items_to_obsidian([item])
+            if result.get("exported", 0) > 0:
+                mark_items_obsidian_exported(db, [item_id])
+                logger.info("Item %d auto-exported to Obsidian successfully.", item_id)
+            else:
+                logger.error("Failed to auto-export item %d: %s", item_id, result.get("errors"))
+    except Exception as exc:
+        logger.exception("Error during auto-export of item %d to Obsidian: %s", item_id, exc)
+    finally:
+        db.close()
+
+
+def trigger_obsidian_auto_export(item_id: int) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_background_obsidian_export(item_id))
+    except RuntimeError:
+        import threading
+        threading.Thread(
+            target=lambda: asyncio.run(_background_obsidian_export(item_id)),
+            daemon=True
+        ).start()
+
+
 def _persist_enriched_result(
     db: Session,
     index: int,
@@ -201,7 +244,7 @@ def _persist_enriched_result(
         article_index=index,
         article_total=total_pending,
     )
-    _persist_article(db, article, enriched)
+    db_item = _persist_article(db, article, enriched)
     emit_step(
         on_progress,
         "save",
@@ -215,6 +258,10 @@ def _persist_enriched_result(
     stats["saved"] += 1
     if enriched.ai_relevance == "RELEVANTE":
         stats["relevante"] += 1
+        from app.services.settings import load_settings
+        settings = load_settings()
+        if settings.get("obsidian_auto_export", False):
+            trigger_obsidian_auto_export(db_item.id)
     else:
         stats["lixo"] += 1
 
@@ -234,6 +281,8 @@ async def _enrich_and_persist_streaming(
         _raise_if_cancelled()
 
         if isinstance(outcome, Exception):
+            if isinstance(outcome, InterruptedError):
+                raise outcome
             stats["errors"].append(f"{article.url}: {outcome}")
             continue
 
@@ -252,6 +301,8 @@ async def _enrich_and_persist_streaming(
             db.rollback()
             existing_urls.add(article.url)
             stats["skipped_duplicate"] += 1
+        except InterruptedError:
+            raise
         except Exception as exc:
             db.rollback()
             stats["errors"].append(f"{article.url}: {exc}")
@@ -359,6 +410,8 @@ def run_ingest(
                 db.rollback()
                 existing_urls.add(article.url)
                 stats["skipped_duplicate"] += 1
+            except InterruptedError:
+                raise
             except Exception as exc:
                 db.rollback()
                 stats["errors"].append(f"{article.url}: {exc}")

@@ -90,6 +90,41 @@ Responda EXATAMENTE neste JSON (sem markdown):
 """
 
 
+UNIFIED_SYSTEM = (
+    "Você é um engenheiro de software sênior e editor técnico bilingue.\n"
+    "Sua tarefa é analisar uma notícia tecnológica sob três aspectos combinados:\n"
+    "1. Triagem: Avaliar se o assunto pertence estritamente ao escopo técnico (Engenharia de Software, Python, IA/LLMs, Infraestrutura/DevOps ou Bancos de Dados). Se não pertencer a nenhuma dessas áreas, classifique como LIXO.\n"
+    "2. Tradução: Se for RELEVANTE, traduza o título para português do Brasil de forma profissional e faça um resumo curto e objetivo (1 a 2 frases) em português do Brasil.\n"
+    "3. Hype/Impacto: Se for RELEVANTE, avalie o impacto técnico para desenvolvedores na escala de 0 a 5 estrelas. Avalie também as dimensões novelty, practicality e community_signal (0 a 5 cada), e forneça uma breve justificativa em português.\n\n"
+    "Responda EXATAMENTE no seguinte formato JSON (sem markdown, sem tags html):\n"
+    "{\n"
+    '  "relevance": "RELEVANTE" ou "LIXO",\n'
+    '  "titulo_pt": "Título traduzido (ou string vazia se LIXO)",\n'
+    '  "descricao_pt": "Resumo em português (ou string vazia se LIXO)",\n'
+    '  "hype": número de 0 a 5,\n'
+    '  "novelty": número de 0 a 5,\n'
+    '  "practicality": número de 0 a 5,\n'
+    '  "community_signal": número de 0 a 5,\n'
+    '  "reasoning": "Breve justificativa técnica em português (ou string vazia se LIXO)"\n'
+    "}"
+)
+
+UNIFIED_PROMPT = """Analise o item abaixo para triagem, tradução e avaliação de hype.
+
+Título original: {title}
+Descrição original: {snippet}
+Fonte: {source}
+Sinais brutos de engajamento da fonte:
+- Reações: {reactions}
+- Comentários: {comments}
+- Stars: {stars}
+- Upvotes: {ups}
+- Score de engajamento pré-calculado: {engagement_score}
+
+Responda rigorosamente com o formato JSON solicitado.
+"""
+
+
 @dataclass(frozen=True)
 class HypeAssessment:
     hype: int
@@ -310,6 +345,166 @@ async def orquestrador_enriquecimento(
 
     emit("hype", "active", title_pt[:80])
     assessment = await agente_hype(article, title_pt, desc_pt)
+    logger.info("[hype] %s → %s estrelas — %s", article.url, assessment.hype, assessment.reasoning)
+    return assessment
+
+
+async def agente_unificado(article: RawArticle) -> EnrichedArticle:
+    snippet = article.description_snippet or "Sem descrição disponível."
+    engagement_score = compute_hype_score(article)
+    prompt = UNIFIED_PROMPT.format(
+        title=article.title,
+        snippet=snippet[:500],
+        source=article.source,
+        reactions=article.positive_reactions,
+        comments=article.comments_count,
+        stars=article.stars,
+        ups=article.ups,
+        engagement_score=engagement_score,
+    )
+    raw = await ollama_generate(prompt, system=UNIFIED_SYSTEM, options=HYPE_OPTIONS)
+
+    relevance = "LIXO"
+    title_pt = article.title
+    desc_pt = snippet
+    hype = 0
+    novelty = 0
+    practicality = 0
+    community_signal = 0
+    reasoning = None
+
+    json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if json_match:
+        try:
+            data = json.loads(json_match.group(0))
+            relevance = _parse_relevance(str(data.get("relevance", "LIXO")))
+            if relevance == "RELEVANTE":
+                title_pt = str(data.get("titulo_pt", "")).strip() or article.title
+                desc_pt = str(data.get("descricao_pt", "")).strip() or snippet
+
+                if article.source == "github_trends":
+                    from app.services.obsidian_titles import prettify_github_title
+                    title_pt = prettify_github_title(title_pt)
+
+                hype = _clamp_score(data.get("hype", 0), default=0) or 0
+                novelty = _clamp_score(data.get("novelty"))
+                practicality = _clamp_score(data.get("practicality"))
+                community_signal = _clamp_score(data.get("community_signal"))
+
+                if novelty is None or practicality is None or community_signal is None:
+                    inferred = _infer_hype_dims(hype)
+                    novelty = novelty if novelty is not None else inferred[0]
+                    practicality = practicality if practicality is not None else inferred[1]
+                    community_signal = community_signal if community_signal is not None else inferred[2]
+
+                reasoning = _format_hype_reasoning(
+                    reasoning=str(data.get("reasoning", "")).strip(),
+                    novelty=novelty,
+                    practicality=practicality,
+                    community_signal=community_signal,
+                )
+            else:
+                desc_pt = "Conteúdo fora do escopo técnico."
+        except Exception as exc:
+            logger.warning("Erro ao decodificar JSON do agente_unificado: %s. Resposta: %s", exc, raw)
+            relevance = "LIXO"
+            desc_pt = "Falha no parse do agente unificado."
+    else:
+        logger.warning("Nenhum JSON encontrado na resposta do agente_unificado: %s", raw)
+        if "RELEVANTE" in raw.upper():
+            relevance = "RELEVANTE"
+            title_pt = article.title
+            desc_pt = snippet
+            hype = 3
+            novelty, practicality, community_signal = _infer_hype_dims(hype)
+            reasoning = _format_hype_reasoning(
+                reasoning="Analise unificada incompleta (formato inválido).",
+                novelty=novelty,
+                practicality=practicality,
+                community_signal=community_signal,
+            )
+        else:
+            relevance = "LIXO"
+            desc_pt = "Conteúdo fora do escopo técnico."
+
+    logger.info("[unified] %s → %s", article.url, relevance)
+    return EnrichedArticle(
+        ai_relevance=relevance,
+        title_pt=title_pt,
+        description_pt=desc_pt,
+        hype_score=hype,
+        ai_reasoning=reasoning,
+    )
+
+
+AgentProgressCallback = Callable[[str, str, str | None], None]
+
+
+async def orquestrador_enriquecimento(
+    article: RawArticle,
+    on_agent_progress: AgentProgressCallback | None = None,
+    *,
+    skip_triador: bool = False,
+) -> EnrichedArticle:
+    def emit(step_id: str, status: str, detail: str | None = None) -> None:
+        if on_agent_progress:
+            on_agent_progress(step_id, status, detail)
+
+    from app.services.settings import load_settings
+    settings = load_settings()
+    pipeline_mode = settings.get("pipeline_mode", "unified")
+
+    from app.services.ingest import _is_cancelled
+    if _is_cancelled():
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+
+    if pipeline_mode == "unified" and not skip_triador:
+        emit("triador", "active", article.title[:80])
+        enriched = await agente_unificado(article)
+
+        if enriched.ai_relevance == "LIXO":
+            emit("triador", "done", "LIXO")
+            emit("tradutor", "done", "Pulado (LIXO)")
+            emit("hype", "done", "Pulado (LIXO)")
+        else:
+            emit("triador", "done", "RELEVANTE")
+            emit("tradutor", "active", enriched.title_pt[:80])
+            emit("tradutor", "done", enriched.title_pt[:80])
+            emit("hype", "active", enriched.title_pt[:80])
+            emit("hype", "done", f"{enriched.hype_score} estrelas")
+
+        return enriched
+
+    if skip_triador:
+        relevance = "RELEVANTE"
+        emit("triador", "done", "RELEVANTE (pré-classificado)")
+    else:
+        if _is_cancelled():
+            raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+        emit("triador", "active", article.title[:80])
+        relevance = await agente_triador(article)
+        emit("triador", "done", relevance)
+
+    if relevance == "LIXO":
+        logger.info("[orquestrador] %s barrado no triador — pulando tradutor/hype", article.url)
+        return EnrichedArticle(
+            ai_relevance="LIXO",
+            title_pt=article.title,
+            description_pt=article.description_snippet or "Conteúdo fora do escopo técnico.",
+            hype_score=0,
+            ai_reasoning=None,
+        )
+
+    if _is_cancelled():
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+    emit("tradutor", "active", article.title[:80])
+    title_pt, desc_pt = await agente_tradutor(article)
+    emit("tradutor", "done", title_pt[:80])
+
+    if _is_cancelled():
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+    emit("hype", "active", title_pt[:80])
+    assessment = await agente_hype(article, title_pt, desc_pt)
     emit("hype", "done", f"{assessment.hype} estrelas")
 
     return EnrichedArticle(
@@ -376,8 +571,13 @@ async def enrich_articles_as_completed(
         for index, article in enumerate(articles, start=1)
     ]
 
-    for task in asyncio.as_completed(tasks):
-        yield await task
+    try:
+        for task in asyncio.as_completed(tasks):
+            yield await task
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
 
 
 def enrich_article_sync(

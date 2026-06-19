@@ -705,8 +705,7 @@ async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depen
         raise HTTPException(status_code=404, detail="Nenhuma notícia encontrada")
 
     try:
-        result = await export_items_to_obsidian(items, emit=None)
-        mark_items_obsidian_exported(db, result.get("exported_ids", []))
+        result = await export_items_to_obsidian(items, emit=None, db=db)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
@@ -720,14 +719,11 @@ async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depen
 
 
 def _run_obsidian_export_job(items: list[NewsItem], emit) -> dict:
-    result = asyncio.run(export_items_to_obsidian(items, emit=emit))
-    exported_ids = result.get("exported_ids", [])
-    if exported_ids:
-        db = SessionLocal()
-        try:
-            mark_items_obsidian_exported(db, exported_ids)
-        finally:
-            db.close()
+    db = SessionLocal()
+    try:
+        result = asyncio.run(export_items_to_obsidian(items, emit=emit, db=db))
+    finally:
+        db.close()
     return result
 
 

@@ -5,6 +5,8 @@ SETTINGS_FILE = Path(__file__).resolve().parents[2] / "settings.json"
 
 DEFAULT_SETTINGS = {
     "background_ingest_enabled": False,
+    "obsidian_auto_export": False,
+    "pipeline_mode": "unified",
     "sources": {
         "dev_to": True,
         "reddit": True,

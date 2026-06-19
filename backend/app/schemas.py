@@ -200,6 +200,8 @@ class SourcesSettings(BaseModel):
 
 class AppSettings(BaseModel):
     background_ingest_enabled: bool
+    obsidian_auto_export: bool = False
+    pipeline_mode: str = "unified"
     sources: SourcesSettings
 
 

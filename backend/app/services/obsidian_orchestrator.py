@@ -272,6 +272,7 @@ async def agente_orquestrador_obsidian(item: NewsItem, analysis: dict) -> dict:
             prompt,
             system=ORCHESTRATE_SYSTEM,
             options={**ORCHESTRATE_OPTIONS, "format": "json"},
+            step_name="orchestrate",
         )
         parsed = _parse_orchestration(raw)
         if parsed:

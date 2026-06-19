@@ -35,6 +35,24 @@ export function SettingsPanel() {
     setSuccessMessage(null);
   }
 
+  function handleToggleObsidian() {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      obsidian_auto_export: !settings.obsidian_auto_export,
+    });
+    setSuccessMessage(null);
+  }
+
+  function handlePipelineModeChange(mode: "unified" | "multi-agent") {
+    if (!settings) return;
+    setSettings({
+      ...settings,
+      pipeline_mode: mode,
+    });
+    setSuccessMessage(null);
+  }
+
   function handleToggleSource(sourceKey: keyof AppSettings["sources"]) {
     if (!settings) return;
     setSettings({
@@ -103,6 +121,67 @@ export function SettingsPanel() {
                   />
                   <div className="peer h-6 w-11 rounded-full bg-slate-700 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-cyan peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
                 </label>
+              </div>
+
+              {/* Auto-exportação Obsidian toggle */}
+              <div className="flex items-center justify-between gap-4 rounded-lg bg-surface/50 p-3 border border-border/30 animate-in fade-in duration-300">
+                <div className="space-y-1">
+                  <span className="block text-sm font-semibold text-foreground">
+                    Auto-exportação Obsidian
+                  </span>
+                  <span className="block text-xs text-muted">
+                    Exporta automaticamente artigos classificados como relevantes para o Obsidian.
+                  </span>
+                </div>
+                <label className="relative inline-flex cursor-pointer items-center">
+                  <input
+                    type="checkbox"
+                    checked={settings.obsidian_auto_export}
+                    onChange={handleToggleObsidian}
+                    disabled={isPending}
+                    className="peer sr-only"
+                  />
+                  <div className="peer h-6 w-11 rounded-full bg-slate-700 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-cyan peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
+                </label>
+              </div>
+
+              {/* Pipeline Mode */}
+              <div className="space-y-2 rounded-lg bg-surface/50 p-3 border border-border/30 animate-in fade-in duration-300">
+                <span className="block text-sm font-semibold text-foreground">
+                  Modo do Pipeline de IA
+                </span>
+                <div className="flex flex-col gap-4 sm:flex-row sm:gap-6 mt-2">
+                  <label className="flex cursor-pointer items-center gap-3 text-xs">
+                    <input
+                      type="radio"
+                      name="pipeline_mode"
+                      value="unified"
+                      checked={settings.pipeline_mode === "unified"}
+                      onChange={() => handlePipelineModeChange("unified")}
+                      disabled={isPending}
+                      className="h-4 w-4 border-border bg-slate-800 text-cyan accent-cyan"
+                    />
+                    <div>
+                      <span className="block font-medium text-foreground">Fast / Unificado (1 chamada LLM)</span>
+                      <span className="block text-[10px] text-muted">Acelera ingestão em ~3x. Recomendado.</span>
+                    </div>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-3 text-xs">
+                    <input
+                      type="radio"
+                      name="pipeline_mode"
+                      value="multi-agent"
+                      checked={settings.pipeline_mode === "multi-agent"}
+                      onChange={() => handlePipelineModeChange("multi-agent")}
+                      disabled={isPending}
+                      className="h-4 w-4 border-border bg-slate-800 text-cyan accent-cyan"
+                    />
+                    <div>
+                      <span className="block font-medium text-foreground">Preciso / Multi-agente (3 chamadas LLM)</span>
+                      <span className="block text-[10px] text-muted">Fluxo sequencial original de calibragem.</span>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               {/* Source configuration */}

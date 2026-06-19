@@ -89,6 +89,9 @@ def test_orquestrador_lixo_skips_tradutor_and_hype():
     )
 
     with patch(
+        "app.services.settings.load_settings",
+        return_value={"pipeline_mode": "multi-agent"},
+    ), patch(
         "app.services.ai_agent.ollama_generate",
         new_callable=AsyncMock,
         return_value="LIXO",
@@ -118,6 +121,9 @@ def test_orquestrador_relevante_runs_all_agents():
     ]
 
     with patch(
+        "app.services.settings.load_settings",
+        return_value={"pipeline_mode": "multi-agent"},
+    ), patch(
         "app.services.ai_agent.ollama_generate",
         new_callable=AsyncMock,
         side_effect=responses,
@@ -137,3 +143,68 @@ def test_orquestrador_relevante_runs_all_agents():
     hype_prompt = hype_call.args[0]
     assert "Guia de orquestração." in hype_prompt
     assert "Score de engajamento pré-calculado" in hype_prompt
+
+
+def test_agente_unificado_relevante():
+    article = RawArticle(
+        title="Building LLM agents with Python",
+        url="https://example.com/llm",
+        source="dev.to",
+        description_snippet="Agent orchestration guide",
+        positive_reactions=42,
+        comments_count=7,
+    )
+    raw_response = (
+        '{"relevance": "RELEVANTE", '
+        '"titulo_pt": "Construindo agentes LLM com Python", '
+        '"descricao_pt": "Guia de orquestração.", '
+        '"hype": 4, "novelty": 3, "practicality": 4, "community_signal": 4, '
+        '"reasoning": "Guia prático."}'
+    )
+
+    from app.services.ai_agent import agente_unificado
+    with patch(
+        "app.services.ai_agent.ollama_generate",
+        new_callable=AsyncMock,
+        return_value=raw_response,
+    ) as mock_generate:
+        enriched = asyncio.run(agente_unificado(article))
+
+    assert enriched.ai_relevance == "RELEVANTE"
+    assert enriched.title_pt == "Construindo agentes LLM com Python"
+    assert enriched.description_pt == "Guia de orquestração."
+    assert enriched.hype_score == 4
+    assert "Novidade 3" in enriched.ai_reasoning
+    mock_generate.assert_called_once()
+
+
+def test_orquestrador_unified_mode():
+    article = RawArticle(
+        title="Building LLM agents with Python",
+        url="https://example.com/llm",
+        source="dev.to",
+        description_snippet="Agent orchestration guide",
+    )
+    raw_response = (
+        '{"relevance": "RELEVANTE", '
+        '"titulo_pt": "Construindo agentes LLM com Python", '
+        '"descricao_pt": "Guia de orquestração.", '
+        '"hype": 4, "novelty": 3, "practicality": 4, "community_signal": 4, '
+        '"reasoning": "Guia prático."}'
+    )
+
+    with patch(
+        "app.services.settings.load_settings",
+        return_value={"pipeline_mode": "unified"},
+    ), patch(
+        "app.services.ai_agent.ollama_generate",
+        new_callable=AsyncMock,
+        return_value=raw_response,
+    ) as mock_generate:
+        enriched = asyncio.run(orquestrador_enriquecimento(article))
+
+    assert enriched.ai_relevance == "RELEVANTE"
+    assert enriched.title_pt == "Construindo agentes LLM com Python"
+    assert enriched.hype_score == 4
+    assert mock_generate.call_count == 1
+

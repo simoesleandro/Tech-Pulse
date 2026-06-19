@@ -7,6 +7,7 @@ import {
   ActivityLog,
   markAllDone,
   type ActivityStep,
+  type StepStatus,
 } from "@/components/ActivityLog";
 import { API_BASE, checkApiHealth } from "@/lib/client-api";
 import { fetchPipelineSteps, seedDemoData } from "@/lib/api";
@@ -32,6 +33,9 @@ export function IngestPanel() {
   const [error, setError] = useState<string | null>(null);
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [ingestDefs, setIngestDefs] = useState<PipelineStepDef[]>(INGEST_PIPELINE_STEPS);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [articlesMap, setArticlesMap] = useState<Record<number, { step_id: string; status: string }>>({});
+  const [totalArticles, setTotalArticles] = useState(0);
 
   useEffect(() => {
     void checkApiHealth().then(setApiOnline);
@@ -49,45 +53,146 @@ export function IngestPanel() {
       return;
     }
 
-    setSteps((prev) => {
-      const saveInProgress = prev.some(
-        (step) => step.id === "save" && step.status === "active",
+    if (!event.article_index) {
+      setSteps((prev) =>
+        prev.map((step) => {
+          if (step.id === event.step_id) {
+            return {
+              ...step,
+              status: event.status as StepStatus,
+              detail: event.detail,
+            };
+          }
+          return step;
+        }),
       );
-      if (
-        saveInProgress &&
-        event.step_id === "triador" &&
+      return;
+    }
+
+    const idx = event.article_index;
+    if (event.article_total) {
+      setTotalArticles(event.article_total);
+    }
+    setArticlesMap((prev) => ({
+      ...prev,
+      [idx]: {
+        step_id: event.step_id,
+        status: event.status,
+      },
+    }));
+
+    const prefix = `Artigo ${event.article_index}/${event.article_total}`;
+    if (event.step_id === "save") {
+      setStatusLine(
         event.status === "active"
-      ) {
-        return prev;
-      }
-      return applyPipelineStepEvent(ingestDefs, event);
+          ? `${prefix} — salvando no banco de dados…`
+          : event.detail ?? `${prefix} — salvo.`,
+      );
+      return;
+    }
+
+    const agentLabel =
+      event.step_id === "triador"
+        ? "Triador"
+        : event.step_id === "tradutor"
+          ? "Tradutor"
+          : event.step_id === "hype"
+            ? "Analista"
+            : event.step_id;
+
+    if (event.status === "active") {
+      setStatusLine(`${prefix} — ${agentLabel} em andamento…`);
+    } else if (event.detail) {
+      setStatusLine(`${prefix} — ${event.detail}`);
+    }
+  }
+
+  useEffect(() => {
+    if (totalArticles === 0) return;
+
+    setSteps((prev) => {
+      const stepOrder = ["triador", "tradutor", "hype", "save"];
+      return prev.map((step) => {
+        const stepIdx = stepOrder.indexOf(step.id);
+        if (stepIdx === -1) {
+          // fetch ou dedup: mantém o status original do pipeline
+          return step;
+        }
+
+        let completedCount = 0;
+        const activeArticles: number[] = [];
+
+        for (const [idxStr, info] of Object.entries(articlesMap)) {
+          const idx = parseInt(idxStr, 10);
+          const currentStepIdx = stepOrder.indexOf(info.step_id);
+
+          if (
+            currentStepIdx > stepIdx ||
+            (currentStepIdx === stepIdx && info.status === "done")
+          ) {
+            completedCount++;
+          } else if (currentStepIdx === stepIdx && info.status === "active") {
+            activeArticles.push(idx);
+          }
+        }
+
+        let status: StepStatus = "pending";
+        let detail = "";
+
+        if (completedCount === totalArticles) {
+          status = "done";
+          detail = `Todos os ${totalArticles} artigos processados.`;
+        } else if (
+          activeArticles.length > 0 ||
+          (completedCount > 0 && completedCount < totalArticles)
+        ) {
+          status = "active";
+          detail = `Processando: ${
+            activeArticles.length > 0
+              ? `Artigo(s) ${activeArticles.join(", ")}`
+              : "aguardando"
+          } · ${completedCount}/${totalArticles} concluídos`;
+        } else {
+          status = "pending";
+          detail = "Aguardando artigos...";
+        }
+
+        return {
+          ...step,
+          status,
+          detail,
+        };
+      });
     });
+  }, [articlesMap, totalArticles]);
 
-    if (event.article_index && event.article_total) {
-      const prefix = `Artigo ${event.article_index}/${event.article_total}`;
-      if (event.step_id === "save") {
-        setStatusLine(
-          event.status === "active"
-            ? `${prefix} — salvando no banco de dados…`
-            : event.detail ?? `${prefix} — salvo.`,
-        );
-        return;
-      }
-
-      const agentLabel =
-        event.step_id === "triador"
-          ? "Triador"
-          : event.step_id === "tradutor"
-            ? "Tradutor"
-            : event.step_id === "hype"
-              ? "Analista"
-              : event.step_id;
-
-      if (event.status === "active") {
-        setStatusLine(`${prefix} — ${agentLabel} em andamento…`);
-      } else if (event.detail) {
-        setStatusLine(`${prefix} — ${event.detail}`);
-      }
+  function handleCancel() {
+    if (abortController) {
+      abortController.abort();
+      setSteps((prev) => {
+        const withErrors = prev.map((step) => {
+          if (step.status === "active") {
+            return {
+              ...step,
+              status: "error" as const,
+              detail: "Cancelado pelo usuário.",
+            };
+          }
+          return step;
+        });
+        return [
+          ...withErrors,
+          {
+            id: "cancelled",
+            label: "Ingestão cancelada.",
+            status: "error" as const,
+            detail: "Operação interrompida pelo usuário.",
+          },
+        ];
+      });
+      setError("Ingestão cancelada pelo usuário.");
+      setIsBusy(false);
+      setAbortController(null);
     }
   }
 
@@ -96,6 +201,8 @@ export function IngestPanel() {
       return;
     }
 
+    const controller = new AbortController();
+    setAbortController(controller);
     setError(null);
     setIngestResult(null);
     setIsBusy(true);
@@ -109,6 +216,8 @@ export function IngestPanel() {
         status: index === 0 ? "active" : "pending",
       })),
     );
+    setArticlesMap({});
+    setTotalArticles(0);
 
     try {
       const online = await checkApiHealth();
@@ -121,10 +230,16 @@ export function IngestPanel() {
 
       const stats = await streamIngest((event) => {
         handlePipelineEvent(event);
-      });
+      }, controller.signal);
 
       setIngestResult(stats);
-      setSteps((prev) => markAllDone(prev.length > 0 ? prev : ingestDefs.map((def) => ({ ...def, status: "pending" as const }))));
+      setSteps((prev) =>
+        markAllDone(
+          prev.length > 0
+            ? prev
+            : ingestDefs.map((def) => ({ ...def, status: "pending" as const })),
+        ),
+      );
       setStatusLine(
         stats.saved > 0
           ? `Concluído — ${stats.saved} artigos salvos no feed.`
@@ -132,6 +247,9 @@ export function IngestPanel() {
       );
       router.refresh();
     } catch (err) {
+      if (controller.signal.aborted) {
+        return;
+      }
       setSteps([
         {
           id: "error",
@@ -144,6 +262,7 @@ export function IngestPanel() {
       setError(err instanceof Error ? err.message : "Erro ao atualizar o feed.");
     } finally {
       setIsBusy(false);
+      setAbortController(null);
     }
   }
 
@@ -196,14 +315,24 @@ export function IngestPanel() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void handleIngest()}
-            disabled={isBusy}
-            className="btn-interactive btn-primary rounded-md border border-cyan bg-cyan/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-cyan"
-          >
-            {isBusy ? "Processando…" : "Atualizar feed"}
-          </button>
+          {isBusy && abortController ? (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="btn-interactive rounded-md border border-crimson bg-crimson/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-crimson hover:bg-crimson/25"
+            >
+              Cancelar
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleIngest()}
+              disabled={isBusy}
+              className="btn-interactive btn-primary rounded-md border border-cyan bg-cyan/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-cyan"
+            >
+              {isBusy ? "Processando…" : "Atualizar feed"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void handleSeedDemo()}

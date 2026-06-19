@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from app.models import NewsItem
+from app.services.ingest import _is_cancelled
 from app.services.obsidian_titles import prettify_note_title
 from app.services.article_content import fetch_article_context
 from app.services.obsidian_orchestrator import agente_orquestrador_obsidian, fallback_orchestration, folder_display_name, folder_emoji
@@ -344,15 +345,17 @@ async def _ollama_with_json_fallback(
     prompt: str,
     system: str,
     options: dict,
+    step_name: str | None = None,
 ) -> str:
     try:
         return await ollama_generate(
             prompt,
             system=system,
             options={**options, "format": "json"},
+            step_name=step_name,
         )
     except Exception:
-        return await ollama_generate(prompt, system=system, options=options)
+        return await ollama_generate(prompt, system=system, options=options, step_name=step_name)
 
 
 def _emit(callback: ObsidianProgressCallback | None, step_id: str, status: str, detail: str | None = None) -> None:
@@ -372,13 +375,15 @@ async def agente_obsidian(
         _emit(on_progress, "fetch", "done", "Usando título e resumo (conteúdo completo indisponível)")
 
     reasoning = (item.ai_reasoning or "").strip() or "Não avaliado."
-
+    if _is_cancelled():
+        raise InterruptedError("Exportação cancelada — conexão encerrada.")
     _emit(on_progress, "summarize", "active", "Extraindo pontos técnicos concretos…")
     try:
         summary = await ollama_generate(
             OBSIDIAN_SUMMARIZE_PROMPT.format(context=context),
             system=OBSIDIAN_SUMMARIZE_SYSTEM,
             options=SUMMARIZE_OPTIONS,
+            step_name="summarize",
         )
         summary = _strip_code_fences(summary)
         _emit(on_progress, "summarize", "done", f"{len(summary.splitlines())} linhas extraídas")
@@ -386,7 +391,8 @@ async def agente_obsidian(
         logger.warning("[obsidian-agent] summarize failed for %s: %s", item.url, exc)
         summary = context
         _emit(on_progress, "summarize", "done", "Resumo simplificado")
-
+    if _is_cancelled():
+        raise InterruptedError("Exportação cancelada — conexão encerrada.")
     _emit(on_progress, "analyze", "active", "Estruturando conhecimento em tópicos…")
     analysis: dict | None = None
     analyze_prompt = OBSIDIAN_ANALYZE_PROMPT.format(
@@ -402,6 +408,7 @@ async def agente_obsidian(
                 analyze_prompt if attempt == 0 else analyze_prompt + "\n\nSeja MAIS específico e técnico. Não repita o título.",
                 OBSIDIAN_ANALYZE_SYSTEM,
                 ANALYZE_OPTIONS,
+                step_name="analyze",
             )
             parsed = _parse_analysis(raw)
             if parsed and (attempt == 1 or _analysis_is_rich(parsed)):
@@ -419,6 +426,8 @@ async def agente_obsidian(
                     analysis[key] = value
 
         if analysis:
+            if _is_cancelled():
+                raise InterruptedError("Exportação cancelada — conexão encerrada.")
             _emit(on_progress, "analyze", "done", f"{len(_as_topics(analysis.get('topicos')))} tópicos estruturados")
             _emit(on_progress, "orchestrate", "active", "Organizando título, pasta e links…")
             analysis = await agente_orquestrador_obsidian(item, analysis)

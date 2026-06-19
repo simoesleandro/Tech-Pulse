@@ -13,6 +13,15 @@ REQUEST_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "180"))
 OLLAMA_CONCURRENCY = int(os.getenv("OLLAMA_CONCURRENCY", "3"))
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
 
+# Groq Cloud API Config
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-specdec").strip()
+
+# Task Splitting Config
+PROVIDER_SUMMARIZE = os.getenv("PROVIDER_SUMMARIZE", "ollama").strip().lower()
+PROVIDER_ANALYZE = os.getenv("PROVIDER_ANALYZE", "groq").strip().lower()
+PROVIDER_ORCHESTRATE = os.getenv("PROVIDER_ORCHESTRATE", "groq").strip().lower()
+
 _resolved_model: str | None = None
 PREFERRED_MODEL_PREFIXES = ("gemma4", "gemma3", "gemma2", "gemma", "llama3", "mistral")
 _LOOP_SEMAPHORE_ATTR = "_techpulse_ollama_sem"
@@ -60,11 +69,99 @@ async def resolve_ollama_model() -> str:
     return _resolved_model
 
 
-async def ollama_generate(
+async def groq_generate(
     prompt: str,
     system: str | None = None,
     options: dict | None = None,
 ) -> str:
+    if not GROQ_API_KEY:
+        raise ValueError("GROQ_API_KEY não configurada.")
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": messages,
+        "temperature": 0.15 if not options else options.get("temperature", 0.15),
+    }
+
+    # Handle JSON format
+    if options and options.get("format") == "json":
+        payload["response_format"] = {"type": "json_object"}
+
+    # Exponential backoff retry loop for HTTP 429 / Rate Limit
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                
+                # Check for rate limit
+                if response.status_code == 429:
+                    retry_after = float(response.headers.get("retry-after", 2 ** attempt))
+                    logger.warning(
+                        "[Groq] Rate limit hit (429). Tentativa %d/%d. Aguardando %.2fs...",
+                        attempt,
+                        max_attempts,
+                        retry_after,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"].strip()
+                
+        except Exception as exc:
+            if attempt == max_attempts:
+                logger.error("[Groq] Falha após %d tentativas: %s", max_attempts, exc)
+                raise
+            sleep_time = 2 ** attempt
+            logger.warning(
+                "[Groq] Erro na chamada: %s. Tentativa %d/%d. Aguardando %ds...",
+                exc,
+                attempt,
+                max_attempts,
+                sleep_time,
+            )
+            await asyncio.sleep(sleep_time)
+
+    raise RuntimeError("Falha ao se comunicar com o Groq após várias tentativas.")
+
+
+async def ollama_generate(
+    prompt: str,
+    system: str | None = None,
+    options: dict | None = None,
+    step_name: str | None = None,
+) -> str:
+    # Resolve provider dynamically based on GROQ_API_KEY and step_name
+    provider = "ollama"
+    if GROQ_API_KEY:
+        if step_name == "summarize":
+            provider = PROVIDER_SUMMARIZE
+        elif step_name == "analyze":
+            provider = PROVIDER_ANALYZE
+        elif step_name == "orchestrate":
+            provider = PROVIDER_ORCHESTRATE
+        else:
+            provider = "groq"
+
+    if provider == "groq":
+        logger.info("[LLM] Roteando etapa '%s' para o Groq (%s)", step_name or "default", GROQ_MODEL)
+        return await groq_generate(prompt, system=system, options=options)
+
+    # Default to local Ollama
     model = await resolve_ollama_model()
     payload: dict = {
         "model": model,
