@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { useConfirm } from "@/hooks/useConfirm";
+import type { ConfirmOptions } from "@/components/ConfirmDialog";
 import {
   assignNewsFolder,
   deleteNewsItem,
@@ -53,6 +55,7 @@ export function CardActionMenu({
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     if (!open) {
@@ -93,7 +96,7 @@ export function CardActionMenu({
     loadingLabel: string,
     onClick: () => Promise<void>,
     variant: "default" | "danger" = "default",
-    confirm?: () => boolean,
+    confirmOptions?: ConfirmOptions,
     keepOpen = false,
   ) {
     const isLoading = activeActionId === id;
@@ -104,10 +107,15 @@ export function CardActionMenu({
         type="button"
         disabled={Boolean(activeActionId) || disabled}
         onClick={() => {
-          if (confirm && !confirm()) {
-            return;
-          }
-          void runAction(id, onClick, keepOpen);
+          void (async () => {
+            if (confirmOptions) {
+              const ok = await confirm(confirmOptions);
+              if (!ok) {
+                return;
+              }
+            }
+            await runAction(id, onClick, keepOpen);
+          })();
         }}
         className={`flex w-full items-center gap-2 px-3 py-2 text-left font-mono text-[10px] uppercase tracking-wide ${
           variant === "danger"
@@ -206,7 +214,12 @@ export function CardActionMenu({
         onRemove?.(item.id);
       },
       "danger",
-      () => window.confirm("Excluir esta notícia do feed?"),
+      {
+        title: "Excluir notícia",
+        message: "Excluir esta notícia do feed?",
+        confirmLabel: "Excluir",
+        variant: "danger",
+      },
     ),
   ];
 
@@ -241,6 +254,7 @@ export function CardActionMenu({
           {message}
         </p>
       ) : null}
+      {dialog}
     </div>
   );
 }

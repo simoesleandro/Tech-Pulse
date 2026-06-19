@@ -8,7 +8,12 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      ALLOW_SEED: "true"
+      ALLOW_SEED: "false"
+      DATABASE_URL: sqlite:////app/data/techpulse.db
+      TECHPULSE_DATA_DIR: /app/data
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - techpulse-data:/app/data
     restart: unless-stopped
 
   frontend:
@@ -16,10 +21,15 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_TECHPULSE_API_KEY: vhHsLEDzI_cnwNsToiy0Fk6iHtDEXI8vSJFyGblVeG8
     ports:
       - "3000:3000"
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_TECHPULSE_API_KEY: vhHsLEDzI_cnwNsToiy0Fk6iHtDEXI8vSJFyGblVeG8
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  techpulse-data:

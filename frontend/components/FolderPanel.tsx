@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 
+import { useConfirm } from "@/hooks/useConfirm";
 import { createFolder, deleteFolder } from "@/lib/api";
 import type { TopicFolder } from "@/lib/types";
 
@@ -21,6 +22,7 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   useEffect(() => {
     setFolders(initialFolders);
@@ -68,7 +70,13 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
   }
 
   async function handleDeleteFolder(folderId: number, folderName: string) {
-    if (!window.confirm(`Excluir a pasta "${folderName}"? Os artigos permanecem salvos.`)) {
+    const ok = await confirm({
+      title: "Excluir pasta",
+      message: `Excluir a pasta "${folderName}"? Os artigos permanecem salvos.`,
+      confirmLabel: "Excluir",
+      variant: "danger",
+    });
+    if (!ok) {
       return;
     }
 
@@ -180,6 +188,7 @@ export function FolderPanel({ folders: initialFolders }: FolderPanelProps) {
           </div>
         ))}
       </div>
+      {dialog}
     </div>
   );
 }

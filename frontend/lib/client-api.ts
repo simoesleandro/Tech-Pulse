@@ -16,6 +16,27 @@ function getApiBase(): string {
 
 export const API_BASE = getApiBase();
 
+const MUTATING_METHODS = new Set(["POST", "PATCH", "PUT", "DELETE"]);
+
+function getApiKey(): string | undefined {
+  const key = process.env.NEXT_PUBLIC_TECHPULSE_API_KEY?.trim();
+  return key || undefined;
+}
+
+function withApiKeyHeaders(init?: RequestInit): RequestInit {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const apiKey = getApiKey();
+  if (!apiKey || !MUTATING_METHODS.has(method)) {
+    return init ?? {};
+  }
+
+  const headers = new Headers(init?.headers);
+  if (!headers.has("X-API-Key")) {
+    headers.set("X-API-Key", apiKey);
+  }
+  return { ...init, headers };
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -44,10 +65,10 @@ export async function apiFetch(
   }
 
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(`${API_BASE}${path}`, withApiKeyHeaders({
       ...fetchInit,
       signal: controller.signal,
-    });
+    }));
 
     if (!response.ok) {
       let message = `Erro HTTP ${response.status}`;

@@ -19,7 +19,7 @@ def test_obsidian_status_hybrid_vault_ok_rest_offline(client, monkeypatch):
         monkeypatch.setattr("app.services.obsidian.OBSIDIAN_REST_API_KEY", "test-key")
         monkeypatch.setattr("app.services.obsidian.OBSIDIAN_VAULT_PATH", tmp_dir)
         monkeypatch.setattr(
-            "app.main.check_rest_connection",
+            "app.routes.obsidian.check_rest_connection",
             lambda: (False, "REST offline"),
         )
 

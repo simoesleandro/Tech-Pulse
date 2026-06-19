@@ -137,7 +137,7 @@ def test_ingest_endpoint(client: TestClient):
         "errors": [],
     }
 
-    with patch("app.main.run_ingest", return_value=mock_stats):
+    with patch("app.routes.ingest.run_ingest", return_value=mock_stats):
         response = client.post("/api/ingest")
 
     assert response.status_code == 200, response.text
@@ -168,7 +168,7 @@ def test_ingest_stream_endpoint(client: TestClient):
             )
         return mock_stats
 
-    with patch("app.main.run_ingest", side_effect=fake_ingest):
+    with patch("app.routes.ingest.run_ingest", side_effect=fake_ingest):
         response = client.post("/api/ingest/stream")
 
     assert response.status_code == 200, response.text

@@ -166,7 +166,21 @@ async def groq_generate(
 
                 response.raise_for_status()
                 return response.json()["choices"][0]["message"]["content"].strip()
-                
+
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in non_retryable:
+                raise
+            if attempt == max_attempts:
+                raise
+            sleep_time = 2 ** attempt
+            logger.warning(
+                "[Groq] Erro HTTP %s. Tentativa %d/%d. Aguardando %ds...",
+                exc.response.status_code,
+                attempt,
+                max_attempts,
+                sleep_time,
+            )
+            await asyncio.sleep(sleep_time)
         except Exception as exc:
             if attempt == max_attempts:
                 logger.error("[Groq] Falha após %d tentativas: %s", max_attempts, exc)

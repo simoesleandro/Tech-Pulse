@@ -72,6 +72,7 @@ function SearchField() {
   const router = useRouter();
   const activeQ = searchParams.get("q") ?? "";
   const [query, setQuery] = useState(activeQ);
+  const searchInputId = "feed-search-input";
 
   useEffect(() => {
     setQuery(activeQ);
@@ -93,15 +94,17 @@ function SearchField() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-2" suppressHydrationWarning>
-      <p className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
+      <label htmlFor={searchInputId} className="font-mono text-[10px] uppercase tracking-wide text-muted/80">
         Buscar no feed
-      </p>
+      </label>
       <div className="flex gap-2">
         <input
+          id={searchInputId}
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Título, descrição, tecnologia…"
+          aria-label="Buscar no feed por título, descrição ou tecnologia"
           className="min-w-0 flex-1 rounded-md border border-border bg-slate-dark px-3 py-2 font-mono text-xs text-foreground placeholder:text-muted/60 focus:border-cyan/50 focus:outline-none"
           suppressHydrationWarning
         />

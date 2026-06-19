@@ -32,6 +32,11 @@ def db_session() -> Generator[Session, None, None]:
 
 @pytest.fixture
 def client(db_session: Session) -> Generator[TestClient, None, None]:
+    from app.deps import auth
+
+    original_api_key = auth.API_KEY
+    auth.API_KEY = ""
+
     def override_get_db() -> Generator[Session, None, None]:
         try:
             yield db_session
@@ -42,3 +47,4 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+    auth.API_KEY = original_api_key

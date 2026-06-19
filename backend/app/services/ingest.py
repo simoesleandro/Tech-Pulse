@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_app_config
 from app.models import NewsItem
 from app.services.ai_agent import (
     AgentProgressCallback,
@@ -23,6 +24,7 @@ from app.services.hype_backfill import (
     resolve_hype_score,
 )
 from app.services.pipeline_progress import ProgressEmitter, emit_step
+from app.pipeline.job import PipelineJob
 from app.services.scrapers.base import EnrichedArticle, RawArticle
 
 
@@ -211,7 +213,13 @@ def get_backfill_status(db: Session) -> dict[str, int]:
     }
 
 
-def _persist_article(db: Session, article: RawArticle, enriched: EnrichedArticle) -> NewsItem:
+def _persist_article(
+    db: Session,
+    article: RawArticle,
+    enriched: EnrichedArticle,
+    *,
+    commit: bool = True,
+) -> NewsItem:
     hype_score = resolve_hype_score(enriched.hype_score, article)
     db_item = NewsItem(
         title=resolve_persist_title(article, enriched.title_pt),
@@ -229,9 +237,35 @@ def _persist_article(db: Session, article: RawArticle, enriched: EnrichedArticle
         is_enriched=True,
     )
     db.add(db_item)
-    db.commit()
-    db.refresh(db_item)
+    if commit:
+        db.commit()
+        db.refresh(db_item)
+    else:
+        db.flush()
     return db_item
+
+
+class _BatchPersister:
+    """Acumula inserts e faz commit a cada N artigos."""
+
+    def __init__(self, db: Session, batch_size: int | None = None):
+        if batch_size is None:
+            batch_size = get_app_config().ingest_batch_size
+        self.db = db
+        self.batch_size = batch_size
+        self._pending = 0
+
+    def persist(self, article: RawArticle, enriched: EnrichedArticle) -> NewsItem:
+        item = _persist_article(self.db, article, enriched, commit=False)
+        self._pending += 1
+        if self._pending >= self.batch_size:
+            self.flush()
+        return item
+
+    def flush(self) -> None:
+        if self._pending:
+            self.db.commit()
+            self._pending = 0
 
 
 def _agent_progress_factory(
@@ -302,28 +336,60 @@ def _persist_enriched_result(
     total_pending: int,
     existing_urls: set[str],
     stats: dict,
+    *,
+    batch: _BatchPersister | None = None,
+    job: PipelineJob | None = None,
 ) -> None:
     stats["classified"] += 1
 
-    emit_step(
-        on_progress,
-        "save",
-        "active",
-        f"salvando artigo {index}/{total_pending} no SQLite…",
-        article_index=index,
-        article_total=total_pending,
-        title=article.title,
-    )
-    db_item = _persist_article(db, article, enriched)
-    emit_step(
-        on_progress,
-        "save",
-        "done",
-        f"artigo {index}/{total_pending} salvo · {enriched.title_pt[:60]}",
-        article_index=index,
-        article_total=total_pending,
-        title=article.title,
-    )
+    if job:
+        job.raise_if_cancelled()
+        job.emit_step(
+            on_progress,
+            "save",
+            "active",
+            f"salvando artigo {index}/{total_pending} no SQLite…",
+            article_index=index,
+            article_total=total_pending,
+            title=article.title,
+        )
+    else:
+        emit_step(
+            on_progress,
+            "save",
+            "active",
+            f"salvando artigo {index}/{total_pending} no SQLite…",
+            article_index=index,
+            article_total=total_pending,
+            title=article.title,
+        )
+
+    if batch is not None:
+        db_item = batch.persist(article, enriched)
+    else:
+        db_item = _persist_article(db, article, enriched)
+
+    done_detail = f"artigo {index}/{total_pending} salvo · {enriched.title_pt[:60]}"
+    if job:
+        job.emit_step(
+            on_progress,
+            "save",
+            "done",
+            done_detail,
+            article_index=index,
+            article_total=total_pending,
+            title=article.title,
+        )
+    else:
+        emit_step(
+            on_progress,
+            "save",
+            "done",
+            done_detail,
+            article_index=index,
+            article_total=total_pending,
+            title=article.title,
+        )
 
     existing_urls.add(normalize_url(article.url))
     stats["saved"] += 1
@@ -344,12 +410,18 @@ async def _enrich_and_persist_streaming(
     total_pending: int,
     existing_urls: set[str],
     stats: dict,
+    *,
+    batch: _BatchPersister,
+    job: PipelineJob | None = None,
 ) -> None:
     def factory(index: int, total: int, title: str) -> AgentProgressCallback:
         return _agent_progress_factory(on_progress, index, total, title)
 
     async for index, article, outcome in enrich_articles_as_completed(pending, factory):
-        _raise_if_cancelled()
+        if job:
+            job.raise_if_cancelled()
+        else:
+            _raise_if_cancelled()
 
         if isinstance(outcome, Exception):
             if isinstance(outcome, InterruptedError):
@@ -367,9 +439,12 @@ async def _enrich_and_persist_streaming(
                 total_pending,
                 existing_urls,
                 stats,
+                batch=batch,
+                job=job,
             )
         except IntegrityError:
             db.rollback()
+            batch._pending = 0
             existing_urls.add(normalize_url(article.url))
             stats["skipped_duplicate"] += 1
         except InterruptedError:
@@ -386,6 +461,9 @@ def _run_streaming_enrich(
     total_pending: int,
     existing_urls: set[str],
     stats: dict,
+    *,
+    batch: _BatchPersister,
+    job: PipelineJob | None = None,
 ) -> None:
     asyncio.run(
         _enrich_and_persist_streaming(
@@ -395,6 +473,8 @@ def _run_streaming_enrich(
             total_pending,
             existing_urls,
             stats,
+            batch=batch,
+            job=job,
         )
     )
 
@@ -416,7 +496,15 @@ def run_ingest(
     fetchers: list[Fetcher] | None = None,
     enricher: Callable[[RawArticle], object] | None = None,
     on_progress: ProgressEmitter | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> dict:
+    job = PipelineJob("ingest", cancel_event)
+    set_ingest_cancel_event(job.cancel_event)
+
+    def _check_cancel() -> None:
+        job.raise_if_cancelled()
+
+    batch = _BatchPersister(db)
     if fetchers is None:
         from app.services.settings import load_settings
         settings = load_settings()
@@ -433,19 +521,19 @@ def run_ingest(
         if sources.get("rss_feeds", True):
             fetchers.append(fetch_rss_feeds)
 
-    emit_step(on_progress, "fetch", "active", "Iniciando busca nas fontes…")
+    job.emit_step(on_progress, "fetch", "active", "Iniciando busca nas fontes…")
     existing_urls = _load_existing_urls(db)
     articles, scraper_errors = _fetch_all_articles(fetchers, on_progress)
-    emit_step(on_progress, "fetch", "done", f"{len(articles)} artigos capturados")
+    job.emit_step(on_progress, "fetch", "done", f"{len(articles)} artigos capturados")
 
-    emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
+    job.emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
     pending = [
         article
         for article in articles
         if normalize_url(article.url) not in existing_urls
     ]
     skipped = len(articles) - len(pending)
-    emit_step(
+    job.emit_step(
         on_progress,
         "dedup",
         "done",
@@ -464,41 +552,50 @@ def run_ingest(
 
     total_pending = len(pending)
 
-    _raise_if_cancelled()
+    _check_cancel()
 
-    if enricher is not None:
-        for index, article in enumerate(pending, start=1):
-            _raise_if_cancelled()
-            try:
-                enriched = enricher(article)
-                _persist_enriched_result(
-                    db,
-                    index,
-                    article,
-                    enriched,
-                    on_progress,
-                    total_pending,
-                    existing_urls,
-                    stats,
-                )
-            except IntegrityError:
-                db.rollback()
-                existing_urls.add(normalize_url(article.url))
-                stats["skipped_duplicate"] += 1
-            except InterruptedError:
-                raise
-            except Exception as exc:
-                db.rollback()
-                stats["errors"].append(f"{article.url}: {exc}")
-    else:
-        _run_streaming_enrich(
-            db,
-            pending,
-            on_progress,
-            total_pending,
-            existing_urls,
-            stats,
-        )
+    try:
+        if enricher is not None:
+            for index, article in enumerate(pending, start=1):
+                _check_cancel()
+                try:
+                    enriched = enricher(article)
+                    _persist_enriched_result(
+                        db,
+                        index,
+                        article,
+                        enriched,
+                        on_progress,
+                        total_pending,
+                        existing_urls,
+                        stats,
+                        batch=batch,
+                        job=job,
+                    )
+                except IntegrityError:
+                    db.rollback()
+                    batch._pending = 0
+                    existing_urls.add(normalize_url(article.url))
+                    stats["skipped_duplicate"] += 1
+                except InterruptedError:
+                    raise
+                except Exception as exc:
+                    db.rollback()
+                    batch._pending = 0
+                    stats["errors"].append(f"{article.url}: {exc}")
+        else:
+            _run_streaming_enrich(
+                db,
+                pending,
+                on_progress,
+                total_pending,
+                existing_urls,
+                stats,
+                batch=batch,
+                job=job,
+            )
+    finally:
+        batch.flush()
 
     return stats
 

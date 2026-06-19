@@ -1,13 +1,11 @@
 import { Suspense } from "react";
 
+import { AdminDrawer } from "@/components/AdminDrawer";
 import { FilterBar } from "@/components/FilterBar";
 import { FolderPanel } from "@/components/FolderPanel";
 import { Header } from "@/components/Header";
-import { IngestPanel } from "@/components/IngestPanel";
 import { NewsFeed } from "@/components/NewsFeed";
 import { ObsidianStatusBanner } from "@/components/ObsidianStatusBanner";
-import { SystemPanel } from "@/components/SystemPanel";
-import { SettingsPanel } from "@/components/SettingsPanel";
 import { ConceptCloud } from "@/components/ConceptCloud";
 import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
 import type { FeedView, TopicFolder } from "@/lib/types";
@@ -127,34 +125,16 @@ export default async function Home({
       "Não foi possível carregar as pastas. Reinicie o backend com o código mais recente.";
   }
 
+  const hasActiveFilters = Boolean(
+    folderId || source || hype !== undefined || minHype !== undefined || obsidianExported !== undefined || q,
+  );
+
   return (
     <>
       <Header unreadCount={unreadCount} />
 
       <main className="mx-auto max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <div className="flex flex-col gap-6">
-          <IngestPanel />
-          <SettingsPanel />
-          <SystemPanel />
-
-          {apiError ? (
-            <div
-              className="rounded-lg border border-crimson/40 bg-crimson/10 px-4 py-3 text-sm text-crimson"
-              role="alert"
-            >
-              {apiError}
-            </div>
-          ) : null}
-
-          {foldersError ? (
-            <div
-              className="rounded-lg border border-crimson/30 bg-crimson/5 px-4 py-2 text-xs text-crimson"
-              role="alert"
-            >
-              {foldersError}
-            </div>
-          ) : null}
-
           <div className="flex flex-col gap-4">
             <Suspense fallback={<FilterBarFallback />}>
               <FilterBar />
@@ -171,6 +151,24 @@ export default async function Home({
             <ObsidianStatusBanner />
 
             {apiError ? (
+              <div
+                className="rounded-lg border border-crimson/40 bg-crimson/10 px-4 py-3 text-sm text-crimson"
+                role="alert"
+              >
+                {apiError}
+              </div>
+            ) : null}
+
+            {foldersError ? (
+              <div
+                className="rounded-lg border border-crimson/30 bg-crimson/5 px-4 py-2 text-xs text-crimson"
+                role="alert"
+              >
+                {foldersError}
+              </div>
+            ) : null}
+
+            {apiError ? (
               <FeedSkeleton />
             ) : (
               <NewsFeed
@@ -179,9 +177,12 @@ export default async function Home({
                 folders={folders}
                 total={feedTotal}
                 page={page}
+                hasActiveFilters={hasActiveFilters}
               />
             )}
           </div>
+
+          <AdminDrawer />
         </div>
       </main>
     </>

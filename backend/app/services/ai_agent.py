@@ -311,44 +311,6 @@ async def agente_hype(
 AgentProgressCallback = Callable[[str, str, str | None], None]
 
 
-async def orquestrador_enriquecimento(
-    article: RawArticle,
-    on_agent_progress: AgentProgressCallback | None = None,
-    *,
-    skip_triador: bool = False,
-) -> EnrichedArticle:
-    def emit(step_id: str, status: str, detail: str | None = None) -> None:
-        if on_agent_progress:
-            on_agent_progress(step_id, status, detail)
-
-    if skip_triador:
-        relevance = "RELEVANTE"
-        emit("triador", "done", "RELEVANTE (pré-classificado)")
-    else:
-        emit("triador", "active", article.title[:80])
-        relevance = await agente_triador(article)
-        emit("triador", "done", relevance)
-
-    if relevance == "LIXO":
-        logger.info("[orquestrador] %s barrado no triador — pulando tradutor/hype", article.url)
-        return EnrichedArticle(
-            ai_relevance="LIXO",
-            title_pt=article.title,
-            description_pt=article.description_snippet or "Conteúdo fora do escopo técnico.",
-            hype_score=0,
-            ai_reasoning=None,
-        )
-
-    emit("tradutor", "active", article.title[:80])
-    title_pt, desc_pt = await agente_tradutor(article)
-    emit("tradutor", "done", title_pt[:80])
-
-    emit("hype", "active", title_pt[:80])
-    assessment = await agente_hype(article, title_pt, desc_pt)
-    logger.info("[hype] %s → %s estrelas — %s", article.url, assessment.hype, assessment.reasoning)
-    return assessment
-
-
 async def agente_unificado(article: RawArticle) -> EnrichedArticle:
     snippet = article.description_snippet or "Sem descrição disponível."
     engagement_score = compute_hype_score(article)
