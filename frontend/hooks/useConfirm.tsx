@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { ConfirmDialog, type ConfirmOptions } from "@/components/ConfirmDialog";
 
@@ -9,23 +9,28 @@ interface PendingConfirm extends ConfirmOptions {
 }
 
 export function useConfirm() {
-  const [pending, setPending] = useState<PendingConfirm | null>(null);
+  const [pending, setPending] = useState<ConfirmOptions | null>(null);
+  const pendingRef = useRef<PendingConfirm | null>(null);
 
   const confirm = useCallback((options: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
-      setPending({ ...options, resolve });
+      const next: PendingConfirm = { ...options, resolve };
+      pendingRef.current = next;
+      setPending(options);
     });
   }, []);
 
   const handleConfirm = useCallback(() => {
-    pending?.resolve(true);
+    pendingRef.current?.resolve(true);
+    pendingRef.current = null;
     setPending(null);
-  }, [pending]);
+  }, []);
 
   const handleCancel = useCallback(() => {
-    pending?.resolve(false);
+    pendingRef.current?.resolve(false);
+    pendingRef.current = null;
     setPending(null);
-  }, [pending]);
+  }, []);
 
   const dialog = (
     <ConfirmDialog

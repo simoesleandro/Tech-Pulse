@@ -84,8 +84,8 @@ export function NewsFeed({
 
     return (
       <div className="flex flex-col gap-3 pb-24">
-        {bulk.actionMessage ? (
-          <p className="font-mono text-[10px] text-violet-300">{bulk.actionMessage}</p>
+        {bulk.actionMessage && !bulk.actionMessage.startsWith("Erro") ? (
+          <p className="font-mono text-[10px] text-emerald">{bulk.actionMessage}</p>
         ) : null}
 
         <NewsTriageCard
@@ -131,8 +131,8 @@ export function NewsFeed({
 
   return (
     <div className="flex flex-col gap-3 pb-24">
-      {bulk.actionMessage ? (
-        <p className="font-mono text-[10px] text-violet-300">{bulk.actionMessage}</p>
+      {bulk.actionMessage && !bulk.actionMessage.startsWith("Erro") ? (
+        <p className="font-mono text-[10px] text-emerald">{bulk.actionMessage}</p>
       ) : null}
 
       {view === "queue" && feed.items.length > 0 && (
@@ -186,11 +186,14 @@ export function NewsFeed({
         onUnbookmark={() => bulk.handleBulkBookmark(false)}
         onMoveToFolder={bulk.handleBulkMoveToFolder}
         onRemoveFromFolder={bulk.handleBulkRemoveFromFolder}
-        onDelete={bulk.handleBulkDelete}
+        onDelete={() => void bulk.handleBulkDelete()}
         onExportObsidian={() => bulk.handleBulkExportObsidian(false)}
         onExportObsidianAndRead={() => bulk.handleBulkExportObsidian(true)}
         disabled={bulk.isBusy}
         busyAction={bulk.busyAction}
+        errorMessage={
+          bulk.actionMessage?.startsWith("Erro") ? bulk.actionMessage : null
+        }
       />
 
       <ObsidianExportModal

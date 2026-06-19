@@ -284,8 +284,8 @@ export async function deleteNewsItem(id: number): Promise<BulkNewsResult> {
 }
 
 export async function bulkDeleteNews(ids: number[]): Promise<BulkNewsResult> {
-  return apiJson<BulkNewsResult>("/api/news/bulk", {
-    method: "DELETE",
+  return apiJson<BulkNewsResult>("/api/news/bulk/delete", {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids }),
     timeoutMs: 30_000,

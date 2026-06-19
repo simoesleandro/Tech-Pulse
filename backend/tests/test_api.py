@@ -215,6 +215,16 @@ def test_bulk_update_and_delete(client: TestClient):
     assert bulk_delete.json()["affected"] == 2
 
 
+def test_bulk_delete_post(client: TestClient):
+    first = client.post("/api/news", json=VALID_PAYLOAD).json()["id"]
+    second_payload = {**VALID_PAYLOAD, "url": "https://example.com/post-delete"}
+    second = client.post("/api/news", json=second_payload).json()["id"]
+
+    response = client.post("/api/news/bulk/delete", json={"ids": [first, second]})
+    assert response.status_code == 200
+    assert response.json()["affected"] == 2
+
+
 def test_delete_news_item(client: TestClient):
     create_response = client.post("/api/news", json=VALID_PAYLOAD)
     item_id = create_response.json()["id"]

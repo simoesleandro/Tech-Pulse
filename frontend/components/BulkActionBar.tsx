@@ -18,6 +18,7 @@ interface BulkActionBarProps {
   onExportObsidianAndRead?: () => void;
   disabled?: boolean;
   busyAction?: string | null;
+  errorMessage?: string | null;
 }
 
 export function BulkActionBar({
@@ -38,6 +39,7 @@ export function BulkActionBar({
   onExportObsidianAndRead,
   disabled = false,
   busyAction = null,
+  errorMessage = null,
 }: BulkActionBarProps) {
   if (selectedCount === 0) {
     return null;
@@ -209,6 +211,12 @@ export function BulkActionBar({
           {busyAction === "delete" ? "Excluindo…" : "Excluir"}
         </button>
       </div>
+
+      {errorMessage ? (
+        <p className="mt-2 text-xs text-crimson" role="alert">
+          {errorMessage}
+        </p>
+      ) : null}
     </div>
   );
 }

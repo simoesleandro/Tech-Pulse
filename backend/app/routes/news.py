@@ -254,6 +254,15 @@ def bulk_update_news(payload: BulkNewsUpdate, db: Session = Depends(get_db)):
 
 @router.delete("/api/news/bulk", response_model=BulkNewsResult, dependencies=[Depends(require_api_key)])
 def bulk_delete_news(payload: BulkNewsDelete, db: Session = Depends(get_db)):
+    return _bulk_delete_news(payload, db)
+
+
+@router.post("/api/news/bulk/delete", response_model=BulkNewsResult, dependencies=[Depends(require_api_key)])
+def bulk_delete_news_post(payload: BulkNewsDelete, db: Session = Depends(get_db)):
+    return _bulk_delete_news(payload, db)
+
+
+def _bulk_delete_news(payload: BulkNewsDelete, db: Session) -> BulkNewsResult:
     if not payload.ids:
         raise HTTPException(status_code=400, detail="Nenhum item selecionado")
 

@@ -72,10 +72,11 @@ export function useFeedBulkActions({
       return;
     }
     void runBulkAction("delete", async () => {
-      await bulkDeleteNews(ids);
+      const result = await bulkDeleteNews(ids);
       setItems((current) => current.filter((item) => !ids.includes(item.id)));
       setFeedTotal((current) => Math.max(0, current - ids.length));
       setSelectedIds([]);
+      setActionMessage(`${result.affected} notícia(s) excluída(s).`);
     });
   }
 
