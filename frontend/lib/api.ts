@@ -124,16 +124,19 @@ function viewToFilters(
   folderId?: number,
   extra?: Pick<FeedQueryOptions, "source" | "hype" | "min_hype" | "obsidian_exported" | "q">,
 ): Omit<NewsFilters, "limit" | "offset"> {
-  const filters: Omit<NewsFilters, "limit" | "offset"> = {
-    ai_relevance: "RELEVANTE",
-  };
+  const filters: Omit<NewsFilters, "limit" | "offset"> = {};
 
   if (view === "read") {
     filters.is_read = true;
+    filters.ai_relevance = "RELEVANTE";
   } else if (view === "saved") {
     filters.is_bookmarked = true;
+    filters.ai_relevance = "RELEVANTE";
+  } else if (view === "lixo") {
+    filters.ai_relevance = "LIXO";
   } else {
     filters.is_read = false;
+    filters.ai_relevance = "RELEVANTE";
   }
 
   if (folderId !== undefined) {

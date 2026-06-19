@@ -13,7 +13,7 @@ import { fetchFolders, getFeedPage, getUnreadCount } from "@/lib/api";
 import type { FeedView, TopicFolder } from "@/lib/types";
 
 function resolveView(raw?: string): FeedView {
-  if (raw === "read" || raw === "saved") {
+  if (raw === "read" || raw === "saved" || raw === "lixo") {
     return raw;
   }
   return "queue";

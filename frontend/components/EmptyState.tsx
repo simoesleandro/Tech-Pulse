@@ -17,6 +17,10 @@ const COPY: Record<FeedView, { title: string; body: string }> = {
     title: "Nenhum salvamento",
     body: "Use o ícone de favorito em um artigo para guardá-lo nesta lista.",
   },
+  lixo: {
+    title: "Nada descartado",
+    body: "Artigos classificados como LIXO pelo triador aparecem aqui para revisão.",
+  },
 };
 
 export function EmptyState({ view }: EmptyStateProps) {

@@ -179,6 +179,7 @@ Ou clique em **Dados demo** no painel **Ingestão** do dashboard.
 | **Sistema** | Backfill Obsidian, re-enrich legado, MOCs, digest semanal |
 | **Filtros** | Hype mínimo/exato, status Obsidian, fonte, assunto |
 | **Triagem rápida** | Atalhos `e` marcar lida · `s` salvar · `o` Obsidian · `j/k` navegar |
+| **Lixo** | Aba para revisar artigos classificados como `LIXO` pelo triador |
 
 ---
 
@@ -276,6 +277,17 @@ pytest
 
 # With verbose output
 pytest -v
+```
+
+### Frontend (Playwright smoke)
+
+Requer dashboard em `http://localhost:3000` (`npm run dev`):
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+npm run test:e2e
 ```
 
 > **80+ cenários** cobrindo health, CRUD, filtros, Obsidian, ingest e agentes.

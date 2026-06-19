@@ -21,6 +21,18 @@ from app.services.hype_backfill import (
     resolve_hype_score,
 )
 from app.services.pipeline_progress import ProgressEmitter, emit_step
+from app.services.scrapers.base import EnrichedArticle, RawArticle
+
+
+def resolve_persist_title(article: RawArticle, title_pt: str) -> str:
+    """Garante títulos legíveis de GitHub Trends ao persistir no SQLite."""
+    if article.source == "github_trends":
+        from app.services.obsidian_titles import prettify_github_title
+
+        return prettify_github_title(title_pt)
+    return title_pt
+
+
 from app.services.scrapers import (
     fetch_devto,
     fetch_github_trends,
@@ -28,7 +40,6 @@ from app.services.scrapers import (
     fetch_reddit,
     fetch_rss_feeds,
 )
-from app.services.scrapers.base import EnrichedArticle, RawArticle
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +158,7 @@ def get_backfill_status(db: Session) -> dict[str, int]:
 def _persist_article(db: Session, article: RawArticle, enriched: EnrichedArticle) -> NewsItem:
     hype_score = resolve_hype_score(enriched.hype_score, article)
     db_item = NewsItem(
-        title=enriched.title_pt,
+        title=resolve_persist_title(article, enriched.title_pt),
         title_original=article.title,
         description=enriched.description_pt,
         url=article.url,
@@ -453,7 +464,7 @@ def _apply_enriched_to_item(
     raw: RawArticle,
     enriched: EnrichedArticle,
 ) -> None:
-    item.title = enriched.title_pt
+    item.title = resolve_persist_title(raw, enriched.title_pt)
     item.title_original = raw.title
     item.description = enriched.description_pt
     item.ai_relevance = enriched.ai_relevance

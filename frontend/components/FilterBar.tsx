@@ -18,6 +18,7 @@ const VIEWS: { id: FeedView; label: string }[] = [
   { id: "queue", label: "Fila" },
   { id: "read", label: "Lidas" },
   { id: "saved", label: "Salvos" },
+  { id: "lixo", label: "Lixo" },
 ];
 
 function buildHref(

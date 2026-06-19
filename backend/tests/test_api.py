@@ -127,6 +127,17 @@ def test_list_obsidian_exported_filter(client: TestClient, db_session):
     assert pending_id not in exported_ids
 
 
+def test_list_lixo_filter(client: TestClient):
+    client.post("/api/news", json=VALID_PAYLOAD)
+    client.post("/api/news", json=JUNK_PAYLOAD)
+
+    response = client.get("/api/news", params={"ai_relevance": "LIXO"})
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["ai_relevance"] == "LIXO"
+
+
 def test_list_bookmarked_filter(client: TestClient):
     create_response = client.post("/api/news", json=VALID_PAYLOAD)
     item_id = create_response.json()["id"]
