@@ -101,7 +101,9 @@ export function IngestPanel() {
           ? "Tradutor"
           : event.step_id === "hype"
             ? "Analista"
-            : event.step_id;
+            : event.step_id === "unified"
+              ? "Análise Unificada"
+              : event.step_id;
 
     if (event.status === "active") {
       setStatusLine(`${prefix} — ${agentLabel} em andamento…`);
@@ -114,11 +116,16 @@ export function IngestPanel() {
     if (totalArticles === 0) return;
 
     setSteps((prev) => {
-      const stepOrder = ["triador", "tradutor", "hype", "save"];
+      const stepOrder = prev.map((s) => s.id);
+      const agentStepIds = new Set(["triador", "tradutor", "hype", "unified", "save"]);
       return prev.map((step) => {
+        if (!agentStepIds.has(step.id)) {
+          // fetch ou dedup: mantém o status original do pipeline
+          return step;
+        }
+
         const stepIdx = stepOrder.indexOf(step.id);
         if (stepIdx === -1) {
-          // fetch ou dedup: mantém o status original do pipeline
           return step;
         }
 

@@ -21,7 +21,6 @@ import {
 } from "@/lib/api";
 import {
   applyPipelineStepEvent,
-  applyObsidianStepEvent,
   RE_ENRICH_PIPELINE_STEPS,
   OBSIDIAN_PIPELINE_STEPS,
 } from "@/lib/pipeline-steps";

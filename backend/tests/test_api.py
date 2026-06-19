@@ -34,7 +34,11 @@ def test_pipeline_steps_endpoint(client: TestClient):
     assert "ingest" in data
     assert "backfill" in data
     ingest_ids = [step["id"] for step in data["ingest"]]
-    assert ingest_ids == ["fetch", "dedup", "triador", "tradutor", "hype", "save"]
+    assert ingest_ids[0] == "fetch"
+    assert ingest_ids[1] == "dedup"
+    assert ingest_ids[-1] == "save"
+    agent_block = ingest_ids[2:-1]
+    assert agent_block == ["unified"] or agent_block == ["triador", "tradutor", "hype"]
     assert all(step["estimated_seconds"] > 0 for step in data["ingest"])
 
 

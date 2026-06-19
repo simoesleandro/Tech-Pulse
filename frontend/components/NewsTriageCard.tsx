@@ -210,7 +210,7 @@ export function NewsTriageCard({
           onClick={handleArchiveClick}
           disabled={isBusy}
           className="flex flex-1 sm:min-w-[140px] items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3.5 sm:py-3 text-center font-mono text-xs uppercase tracking-wider text-red-400 hover:bg-red-500/15 disabled:opacity-50 disabled:hover:bg-red-500/5 transition-all cursor-pointer touch-manipulation"
-          title="Arquivar item como lido (Atalho: E)"
+          title="Marcar como lida (Atalho: E)"
         >
           {busyAction === "archive" ? (
             <ButtonSpinner />

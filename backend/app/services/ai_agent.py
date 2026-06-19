@@ -459,19 +459,13 @@ async def orquestrador_enriquecimento(
         raise InterruptedError("Ingestão cancelada — conexão encerrada.")
 
     if pipeline_mode == "unified" and not skip_triador:
-        emit("triador", "active", article.title[:80])
+        emit("unified", "active", article.title[:80])
         enriched = await agente_unificado(article)
 
         if enriched.ai_relevance == "LIXO":
-            emit("triador", "done", "LIXO")
-            emit("tradutor", "done", "Pulado (LIXO)")
-            emit("hype", "done", "Pulado (LIXO)")
+            emit("unified", "done", f"LIXO — {article.title[:40]}")
         else:
-            emit("triador", "done", "RELEVANTE")
-            emit("tradutor", "active", enriched.title_pt[:80])
-            emit("tradutor", "done", enriched.title_pt[:80])
-            emit("hype", "active", enriched.title_pt[:80])
-            emit("hype", "done", f"{enriched.hype_score} estrelas")
+            emit("unified", "done", f"RELEVANTE (Hype {enriched.hype_score}/5) — {enriched.title_pt[:40]}")
 
         return enriched
 

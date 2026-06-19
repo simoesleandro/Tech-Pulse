@@ -34,6 +34,7 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [obsidianExportIds, setObsidianExportIds] = useState<number[] | null>(null);
+  const [exportMarkReadOnComplete, setExportMarkReadOnComplete] = useState(false);
   const [activeDetailItem, setActiveDetailItem] = useState<NewsItem | null>(null);
 
   const [isTriageMode, setIsTriageMode] = useState(false);
@@ -345,12 +346,59 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
     });
   }
 
-  function handleBulkExportObsidian() {
-    const ids = selectedItems().map((item) => item.id);
-    if (ids.length === 0) {
+  function handleBulkExportObsidian(markReadAfter = false) {
+    const selected = selectedItems();
+    const pending = selected.filter((item) => !item.obsidian_exported_at);
+    if (pending.length === 0) {
+      setActionMessage(
+        selected.length > 0
+          ? "Todos os itens selecionados já foram exportados ao Obsidian."
+          : "Nenhum item selecionado.",
+      );
       return;
     }
-    setObsidianExportIds(ids);
+    const skipped = selected.length - pending.length;
+    if (skipped > 0) {
+      setActionMessage(
+        `${skipped} já exportado(s) ignorado(s). Exportando ${pending.length} pendente(s).`,
+      );
+    }
+    setExportMarkReadOnComplete(markReadAfter);
+    setObsidianExportIds(pending.map((item) => item.id));
+  }
+
+  async function handleObsidianExportComplete(result: {
+    exported: number;
+    exported_ids: number[];
+  }) {
+    const exportedAt = new Date().toISOString();
+    const exportedSet = new Set(result.exported_ids ?? []);
+    setItems((current) =>
+      current.map((item) => {
+        if (!exportedSet.has(item.id)) {
+          return item;
+        }
+        return {
+          ...item,
+          obsidian_exported_at: exportedAt,
+          is_read: exportMarkReadOnComplete ? true : item.is_read,
+        };
+      }),
+    );
+    if (exportMarkReadOnComplete && result.exported_ids?.length) {
+      try {
+        await bulkUpdateNews({ ids: result.exported_ids, is_read: true });
+      } catch {
+        setActionMessage("Exportado, mas falha ao marcar como lido.");
+      }
+    }
+    setActionMessage(
+      exportMarkReadOnComplete
+        ? `${result.exported} nota(s) exportada(s) e marcada(s) como lida(s).`
+        : `${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`,
+    );
+    setExportMarkReadOnComplete(false);
+    router.refresh();
   }
 
   function handleObsidianExport(ids: number[]) {
@@ -400,19 +448,12 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
         <ObsidianExportModal
           ids={obsidianExportIds ?? []}
           open={Boolean(obsidianExportIds?.length)}
-          onClose={() => setObsidianExportIds(null)}
+          onClose={() => {
+            setObsidianExportIds(null);
+            setExportMarkReadOnComplete(false);
+          }}
           onComplete={(result) => {
-            const exportedAt = new Date().toISOString();
-            const exportedSet = new Set(result.exported_ids ?? []);
-            setItems((current) =>
-              current.map((item) =>
-                exportedSet.has(item.id)
-                  ? { ...item, obsidian_exported_at: exportedAt }
-                  : item,
-              ),
-            );
-            setActionMessage(`${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
-            router.refresh();
+            void handleObsidianExportComplete(result);
           }}
         />
       </div>
@@ -480,7 +521,8 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
         onMoveToFolder={handleBulkMoveToFolder}
         onRemoveFromFolder={handleBulkRemoveFromFolder}
         onDelete={handleBulkDelete}
-        onExportObsidian={handleBulkExportObsidian}
+        onExportObsidian={() => handleBulkExportObsidian(false)}
+        onExportObsidianAndRead={() => handleBulkExportObsidian(true)}
         disabled={isBusy}
         busyAction={busyAction}
       />
@@ -488,19 +530,12 @@ export function NewsFeed({ initialItems, view, folders, total, page }: NewsFeedP
       <ObsidianExportModal
         ids={obsidianExportIds ?? []}
         open={Boolean(obsidianExportIds?.length)}
-        onClose={() => setObsidianExportIds(null)}
+        onClose={() => {
+          setObsidianExportIds(null);
+          setExportMarkReadOnComplete(false);
+        }}
         onComplete={(result) => {
-          const exportedAt = new Date().toISOString();
-          const exportedSet = new Set(result.exported_ids ?? []);
-          setItems((current) =>
-            current.map((item) =>
-              exportedSet.has(item.id)
-                ? { ...item, obsidian_exported_at: exportedAt }
-                : item,
-            ),
-          );
-          setActionMessage(`${result.exported} nota(s) formatada(s) e enviada(s) ao Obsidian.`);
-          router.refresh();
+          void handleObsidianExportComplete(result);
         }}
       />
 

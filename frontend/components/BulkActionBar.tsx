@@ -15,6 +15,7 @@ interface BulkActionBarProps {
   onRemoveFromFolder: () => void;
   onDelete: () => void;
   onExportObsidian?: () => void;
+  onExportObsidianAndRead?: () => void;
   disabled?: boolean;
   busyAction?: string | null;
 }
@@ -34,6 +35,7 @@ export function BulkActionBar({
   onRemoveFromFolder,
   onDelete,
   onExportObsidian,
+  onExportObsidianAndRead,
   disabled = false,
   busyAction = null,
 }: BulkActionBarProps) {
@@ -170,9 +172,26 @@ export function BulkActionBar({
               "obsidian",
               "border-violet-400/40 bg-violet-500/10 text-violet-300",
             )}
+            title="Exporta apenas itens selecionados ainda não enviados ao Obsidian"
           >
             {busyAction === "obsidian" ? <ActionSpinner /> : null}
-            {busyAction === "obsidian" ? "Agente…" : "Obsidian"}
+            {busyAction === "obsidian" ? "Agente…" : "Obsidian pendentes"}
+          </button>
+        ) : null}
+
+        {onExportObsidianAndRead ? (
+          <button
+            type="button"
+            onClick={onExportObsidianAndRead}
+            disabled={disabled || Boolean(busyAction)}
+            className={actionClass(
+              "obsidian-read",
+              "border-violet-400/40 bg-violet-500/10 text-violet-300",
+            )}
+            title="Exporta pendentes e marca como lidos ao concluir"
+          >
+            {busyAction === "obsidian-read" ? <ActionSpinner /> : null}
+            {busyAction === "obsidian-read" ? "Agente…" : "Obsidian + lido"}
           </button>
         ) : null}
 

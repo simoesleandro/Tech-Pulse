@@ -229,7 +229,11 @@ function NewsCardComponent({
           <CardField label="Hype" labelClass={theme.fieldLabelClass}>
             <div className="flex flex-col gap-1">
               <HypeStars score={item.hype_score} />
-              {item.ai_reasoning ? (
+              {parsedReasoning?.explanation ? (
+                <p className="text-xs italic leading-relaxed text-muted">
+                  {parsedReasoning.explanation}
+                </p>
+              ) : item.ai_reasoning ? (
                 <p className="text-xs italic leading-relaxed text-muted">
                   {item.ai_reasoning}
                 </p>

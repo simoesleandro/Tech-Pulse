@@ -12,7 +12,7 @@ export const MIN_HYPE_FILTERS = [
   { id: "", label: "Qualquer hype" },
   { id: "3", label: "≥ 3★" },
   { id: "4", label: "≥ 4★" },
-  { id: "5", label: "5★ apenas" },
+  { id: "5", label: "≥ 5★" },
 ] as const;
 
 export const HYPE_FILTERS = [

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { fetchBackfillStatus } from "@/lib/api";
 import {
   HYPE_FILTERS,
   MIN_HYPE_FILTERS,
@@ -114,7 +115,7 @@ function SearchField() {
   );
 }
 
-function FilterPanel() {
+function FilterPanel({ obsidianPending }: { obsidianPending: number | null }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeSource = searchParams.get("source") ?? "";
@@ -192,6 +193,7 @@ function FilterPanel() {
               href={buildHref(pathname, searchParams, {
                 min_hype:
                   activeMinHype === option.id ? null : option.id || null,
+                hype: null,
               })}
               active={activeMinHype === option.id}
               label={option.label}
@@ -210,6 +212,7 @@ function FilterPanel() {
               key={option.id || "any"}
               href={buildHref(pathname, searchParams, {
                 hype: activeHype === option.id ? null : option.id || null,
+                min_hype: null,
               })}
               active={activeHype === option.id}
               label={option.label}
@@ -223,17 +226,25 @@ function FilterPanel() {
           Obsidian
         </p>
         <div className="flex flex-wrap gap-1.5">
-          {OBSIDIAN_FILTERS.map((option) => (
-            <FilterChip
-              key={option.id || "any-obsidian"}
-              href={buildHref(pathname, searchParams, {
-                obsidian:
-                  activeObsidian === option.id ? null : option.id || null,
-              })}
-              active={activeObsidian === option.id}
-              label={option.label}
-            />
-          ))}
+          {OBSIDIAN_FILTERS.map((option) => {
+            const pendingSuffix =
+              option.id === "pending" &&
+              obsidianPending !== null &&
+              obsidianPending > 0
+                ? ` (${obsidianPending})`
+                : "";
+            return (
+              <FilterChip
+                key={option.id || "any-obsidian"}
+                href={buildHref(pathname, searchParams, {
+                  obsidian:
+                    activeObsidian === option.id ? null : option.id || null,
+                })}
+                active={activeObsidian === option.id}
+                label={`${option.label}${pendingSuffix}`}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -263,6 +274,13 @@ export function FilterBar() {
   const searchParams = useSearchParams();
   const activeView = (searchParams.get("view") as FeedView) || "queue";
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [obsidianPending, setObsidianPending] = useState<number | null>(null);
+
+  useEffect(() => {
+    void fetchBackfillStatus()
+      .then((status) => setObsidianPending(status.obsidian_unmarked))
+      .catch(() => setObsidianPending(null));
+  }, []);
 
   const hasActiveFilters = Boolean(
     searchParams.get("source") ||
@@ -314,10 +332,19 @@ export function FilterBar() {
           {hasActiveFilters ? (
             <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-cyan" />
           ) : null}
+          {!hasActiveFilters &&
+          obsidianPending !== null &&
+          obsidianPending > 0 ? (
+            <span className="ml-1.5 rounded-full border border-violet/40 bg-violet/10 px-1.5 py-0.5 font-mono text-[9px] text-violet">
+              Obs {obsidianPending}
+            </span>
+          ) : null}
         </button>
       </nav>
 
-      {filtersOpen ? <FilterPanel /> : null}
+      {filtersOpen ? (
+        <FilterPanel obsidianPending={obsidianPending} />
+      ) : null}
     </div>
   );
 }

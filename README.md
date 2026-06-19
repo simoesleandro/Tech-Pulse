@@ -17,7 +17,7 @@
 [![Issues](https://img.shields.io/github/issues/simoesleandro/Tech-Pulse?style=flat-square&color=f59e0b)](https://github.com/simoesleandro/Tech-Pulse/issues)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.137-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)](https://nextjs.org)
-[![Ollama](https://img.shields.io/badge/Ollama-Gemma-000000?style=flat-square)](https://ollama.com)
+[![Ollama](https://img.shields.io/badge/Ollama-Gemma4-000000?style=flat-square)](https://ollama.com)
 
 <br/>
 
@@ -76,10 +76,11 @@ TechPulse reduces information overload for software engineers by consolidating t
 > **PT:** O que o projeto faz  
 > **EN:** What the project does
 
-- ✅ Ingestão automática de Dev.to, Reddit e GitHub Trends
-- ✅ Classificação cognitiva via Ollama (`RELEVANTE` / `LIXO`)
-- ✅ API REST FastAPI com filtros, leitura e favoritos
-- ✅ Dashboard Next.js slate-dark com feed curado
+- ✅ Ingestão automática de Dev.to, Reddit, Hacker News, GitHub Trends e RSS
+- ✅ Pipeline multi-agente (Triador → Tradutor → Hype) ou modo unificado via Ollama/Groq
+- ✅ Export Obsidian híbrido (vault local + REST API), orquestrador, MOCs e digest semanal
+- ✅ Dashboard Next.js com painéis Sistema, Configurações, triagem rápida e drawer de detalhe
+- ✅ Filtros avançados: hype mínimo, status Obsidian, pastas, busca por conceito
 - ✅ Deduplicação por URL antes da inferência de IA
 - 🚧 Deploy em produção *(em desenvolvimento / in progress)*
 
@@ -92,9 +93,9 @@ TechPulse reduces information overload for software engineers by consolidating t
 | Backend | FastAPI + SQLAlchemy + Pydantic |
 | Frontend | Next.js 16 + Tailwind CSS 4 |
 | Banco de dados / Database | SQLite |
-| IA / AI | Gemma local via Ollama |
+| IA / AI | Gemma4 local via Ollama (opcional Groq) |
 | Deploy | Local (dev) |
-| Testes / Tests | Scripts `test_api.py` + `test_ingest.py` |
+| Testes / Tests | `pytest` em `backend/tests/` + build Next.js no CI |
 
 ---
 
@@ -104,7 +105,7 @@ TechPulse reduces information overload for software engineers by consolidating t
 
 - Python 3.11+
 - Node.js 20+
-- [Ollama](https://ollama.com) com modelo `gemma` instalado (`ollama pull gemma`)
+- [Ollama](https://ollama.com) com modelo `gemma4:12b` (ou `gemma`) — `ollama pull gemma4:12b`
 
 ### Instalação / Installation
 
@@ -159,15 +160,25 @@ Abra `http://localhost:3000`
 curl -X POST http://127.0.0.1:8000/api/ingest
 ```
 
-Ou use o botão **Atualizar feed** no dashboard.
+Ou use o botão **Atualizar feed** no painel **Ingestão**.
 
-### Load demo data (no Ollama required)
+### Dados demo (sem Ollama)
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/seed
 ```
 
-Or click **Load demo data** in the dashboard.
+Ou clique em **Dados demo** no painel **Ingestão** do dashboard.
+
+### Painéis do dashboard
+
+| Painel | Função |
+|--------|--------|
+| **Ingestão** | Atualizar feed, dados demo, progresso SSE |
+| **Configurações** | Ingest em background, fontes ativas, auto-export Obsidian |
+| **Sistema** | Backfill Obsidian, re-enrich legado, MOCs, digest semanal |
+| **Filtros** | Hype mínimo/exato, status Obsidian, fonte, assunto |
+| **Triagem rápida** | Atalhos `e` marcar lida · `s` salvar · `o` Obsidian · `j/k` navegar |
 
 ---
 
@@ -176,7 +187,7 @@ Or click **Load demo data** in the dashboard.
 | Variável | Descrição / Description | Padrão / Default |
 |----------|------------------------|-----------------|
 | `OLLAMA_URL` | Endpoint de geração do Ollama | `http://localhost:11434/api/generate` |
-| `OLLAMA_MODEL` | Modelo local para classificação | `gemma` |
+| `OLLAMA_MODEL` | Modelo local para classificação | `gemma4:12b` |
 | `OLLAMA_TIMEOUT` | Timeout da inferência (segundos) | `60` |
 | `INGEST_ON_STARTUP` | Ingerir ao iniciar o backend | `false` |
 | `INGEST_BACKGROUND` | Loop de ingestão em background | `false` |
@@ -198,8 +209,8 @@ Tech-Pulse/
 │   │   ├── models.py         # ORM NewsItem (SQLite)
 │   │   ├── schemas.py        # Validação Pydantic
 │   │   └── services/         # Scrapers, Ollama, pipeline de ingestão
-│   ├── test_api.py           # Testes dos endpoints REST
-│   └── test_ingest.py        # Testes do pipeline de ingestão
+│   ├── test_api.py           # Testes dos endpoints REST (legado)
+│   └── tests/                # Suite pytest (~80 cenários)
 ├── frontend/
 │   ├── app/                  # Next.js App Router
 │   ├── components/           # Dashboard, cards, filtros
@@ -229,9 +240,13 @@ Endpoints para sincronizar estado antigo com o pipeline atual:
 
 | Endpoint | Descrição |
 |----------|-----------|
-| `GET /api/backfill/status` | Contadores pendentes |
+| `GET /api/backfill/status` | Contadores pendentes (Obsidian + re-enrich) |
 | `POST /api/backfill/obsidian` | Marca `obsidian_exported_at` para notas já no vault |
-| `POST /api/backfill/re-enrich?limit=10` | Reprocessa itens legados em paralelo (tradutor → hype) |
+| `POST /api/backfill/obsidian/mocs` | Cria/atualiza MOCs no vault |
+| `POST /api/backfill/obsidian/digest` | Gera digest semanal no vault |
+| `POST /api/backfill/re-enrich?limit=10` | Reprocessa itens legados (tradutor → hype) |
+
+No dashboard, use o painel **Sistema** para executar essas operações com progresso SSE — sem PowerShell.
 
 **PowerShell** (não use `curl -X`; use `Invoke-RestMethod`):
 
@@ -248,8 +263,6 @@ do {
 
 Itens legados são detectados quando `ai_reasoning` não contém `Novidade` e `Utilidade`. O backfill Obsidian roda no startup do backend; para vault local, defina `OBSIDIAN_VAULT_PATH` no `backend/.env`.
 
-> **Jun/2026:** re-enriquecimento parcial em andamento (~16/30 concluídos). Retomar com o loop acima.
-
 ---
 
 ## 🧪 Testes / Tests
@@ -265,7 +278,7 @@ pytest
 pytest -v
 ```
 
-> **10+ scenarios** covering health check, CRUD, filters, bookmark, seed, ingest mocks.
+> **80+ cenários** cobrindo health, CRUD, filtros, Obsidian, ingest e agentes.
 
 ---
 
@@ -276,7 +289,10 @@ pytest -v
 - [x] Ingestion pipeline + Ollama classification
 - [x] Next.js slate-dark dashboard
 - [x] Pytest suite + GitHub Actions CI
-- [x] Demo seed endpoint (`POST /api/seed`)
+- [x] Demo seed endpoint (`POST /api/seed`) + botão **Dados demo**
+- [x] Painel Sistema (backfill Obsidian/re-enrich com SSE)
+- [x] Filtros hype mínimo e status Obsidian
+- [x] Drawer de detalhe + triagem rápida + digest semanal
 - [ ] Screenshots in README (`docs/screenshot.png`)
 - [ ] Production deploy (Fly.io / Vercel + VPS)
 

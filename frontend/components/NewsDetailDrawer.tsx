@@ -12,6 +12,7 @@ import {
   formatNewsForObsidian,
   exportNewsToObsidian,
 } from "@/lib/api";
+import { downloadObsidianMarkdown } from "@/lib/obsidian-export";
 
 interface NewsDetailDrawerProps {
   item: NewsItem | null;
@@ -55,6 +56,7 @@ export function NewsDetailDrawer({
   const [exportingInline, setExportingInline] = useState(false);
   const [exportInlineResult, setExportInlineResult] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // Close on Escape key
@@ -157,6 +159,20 @@ export function NewsDetailDrawer({
       setExportInlineResult(err instanceof Error ? `Erro: ${err.message}` : "Erro na exportação.");
     } finally {
       setExportingInline(false);
+    }
+  }
+
+  async function handleDownloadMarkdown() {
+    setDownloading(true);
+    try {
+      await downloadObsidianMarkdown(
+        [activeItem],
+        `tech-pulse-${activeItem.id}.md`,
+      );
+    } catch (err) {
+      console.error("Erro ao baixar markdown", err);
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -404,13 +420,21 @@ export function NewsDetailDrawer({
 
                 {markdown && (
                   <>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => void handleCopyMarkdown()}
                         className="btn-interactive flex-1 rounded border border-border px-3 py-1.5 font-mono text-[10px] uppercase text-muted hover:text-foreground"
                       >
                         {copied ? "Copiado! ✓" : "Copiar Markdown"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={downloading}
+                        onClick={() => void handleDownloadMarkdown()}
+                        className="btn-interactive flex-1 rounded border border-border px-3 py-1.5 font-mono text-[10px] uppercase text-muted hover:text-foreground"
+                      >
+                        {downloading ? "Baixando…" : "Baixar .md"}
                       </button>
                       <button
                         type="button"

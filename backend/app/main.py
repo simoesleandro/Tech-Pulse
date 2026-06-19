@@ -52,8 +52,8 @@ from app.schemas import (
     ObsidianConceptResponse,
 )
 from app.services.pipeline_config import (
-    BACKFILL_PIPELINE_STEPS,
-    INGEST_PIPELINE_STEPS,
+    get_ingest_pipeline_steps,
+    get_backfill_pipeline_steps,
     steps_to_dict,
 )
 from app.services.hype_backfill import backfill_missing_hype
@@ -317,11 +317,11 @@ def get_pipeline_steps():
     return PipelineConfigResponse(
         ingest=[
             PipelineStepResponse(**step)
-            for step in steps_to_dict(INGEST_PIPELINE_STEPS)
+            for step in steps_to_dict(get_ingest_pipeline_steps())
         ],
         backfill=[
             PipelineStepResponse(**step)
-            for step in steps_to_dict(BACKFILL_PIPELINE_STEPS)
+            for step in steps_to_dict(get_backfill_pipeline_steps())
         ],
     )
 
