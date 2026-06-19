@@ -143,6 +143,11 @@ export interface BackfillStatus {
   legacy_enrichment_pending: number;
 }
 
+export interface PipelineStatus {
+  busy: boolean;
+  active_job: string | null;
+}
+
 export interface ObsidianBackfillResult {
   discovered: number;
   updated: number;

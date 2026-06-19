@@ -9,8 +9,9 @@ import {
 } from "@/components/ActivityLog";
 import { PipelineProgressDashboard } from "@/components/PipelineProgressDashboard";
 import { useParallelPipelineProgress } from "@/hooks/useParallelPipelineProgress";
+import { pipelineJobLabel } from "@/hooks/usePipelineStatus";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
-import { API_BASE, checkApiHealth } from "@/lib/client-api";
+import { API_BASE, ApiError, checkApiHealth } from "@/lib/client-api";
 import { fetchPipelineSteps, seedDemoData } from "@/lib/api";
 import {
   formatEta,
@@ -20,7 +21,7 @@ import {
   type PipelineStepDef,
 } from "@/lib/pipeline-steps";
 import { streamIngest } from "@/lib/pipeline-stream";
-import type { IngestResult, PipelineStepEvent, SeedResult } from "@/lib/types";
+import type { IngestResult, PipelineStepEvent, PipelineStatus, SeedResult } from "@/lib/types";
 
 const INGEST_AGENT_STEPS = new Set([
   "triador",
@@ -40,7 +41,11 @@ const INGEST_STEP_ORDER = [
   "save",
 ];
 
-export function IngestPanel() {
+export function IngestPanel({
+  pipelineStatus = { busy: false, active_job: null },
+}: {
+  pipelineStatus?: PipelineStatus;
+}) {
   const router = useRouter();
   const pipeline = usePipelineStream();
   const parallel = useParallelPipelineProgress(INGEST_STEP_ORDER, INGEST_AGENT_STEPS);
@@ -52,6 +57,8 @@ export function IngestPanel() {
   const [seedBusy, setSeedBusy] = useState(false);
 
   const isBusy = pipeline.isRunning || seedBusy;
+  const pipelineBlocked =
+    pipelineStatus.busy && !pipeline.isRunning;
 
   useEffect(() => {
     void checkApiHealth().then(setApiOnline);
@@ -188,7 +195,13 @@ export function IngestPanel() {
         },
       ]);
       pipeline.setStatusLine(null);
-      pipeline.setError(err instanceof Error ? err.message : "Erro ao atualizar o feed.");
+      pipeline.setError(
+        err instanceof ApiError && err.status === 409
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Erro ao atualizar o feed.",
+      );
     } finally {
       pipeline.finish();
     }
@@ -266,8 +279,13 @@ export function IngestPanel() {
             <button
               type="button"
               onClick={() => void handleIngest()}
-              disabled={isBusy}
-              className="btn-interactive btn-primary rounded-md border border-cyan bg-cyan/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-cyan"
+              disabled={isBusy || pipelineBlocked}
+              title={
+                pipelineBlocked
+                  ? `${pipelineJobLabel(pipelineStatus.active_job)} em andamento`
+                  : undefined
+              }
+              className="btn-interactive btn-primary rounded-md border border-cyan bg-cyan/10 px-4 py-2 font-mono text-xs uppercase tracking-wide text-cyan disabled:opacity-50"
             >
               {pipeline.isRunning ? "Processando…" : "Atualizar feed"}
             </button>

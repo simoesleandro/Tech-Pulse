@@ -19,6 +19,7 @@ import type {
   ObsidianStatus,
   ObsidianVaultMaintenanceResult,
   PipelineConfig,
+  PipelineStatus,
   SeedResult,
   TopicFolder,
   AppSettings,
@@ -235,6 +236,12 @@ export async function patchBookmarkStatus(
 export async function fetchPipelineSteps(): Promise<PipelineConfig> {
   return apiJson<PipelineConfig>("/api/pipeline/steps", {
     timeoutMs: 10_000,
+  });
+}
+
+export async function fetchPipelineStatus(): Promise<PipelineStatus> {
+  return apiJson<PipelineStatus>("/api/pipeline/status", {
+    timeoutMs: 5_000,
   });
 }
 

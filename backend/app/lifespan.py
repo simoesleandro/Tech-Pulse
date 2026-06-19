@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.config import get_app_config
 from app.database import Base, SessionLocal, engine
+from app.deps.pipeline_lock import end_pipeline_job, try_begin_pipeline_job
 from app.models import migrate_sqlite_schema
 from app.services.hype_backfill import backfill_missing_hype
 from app.services.ingest import run_ingest
@@ -23,6 +24,10 @@ async def _ingest_loop() -> None:
             logger.debug("Background ingest is disabled in settings. Skipping.")
             continue
 
+        if not try_begin_pipeline_job("ingest-background"):
+            logger.debug("Pipeline busy — skipping background ingest cycle.")
+            continue
+
         db = SessionLocal()
         try:
             stats = await asyncio.to_thread(run_ingest, db)
@@ -31,9 +36,13 @@ async def _ingest_loop() -> None:
             logger.exception("Background ingest failed")
         finally:
             db.close()
+            end_pipeline_job()
 
 
 def _run_startup_ingest() -> None:
+    if not try_begin_pipeline_job("ingest-startup"):
+        logger.info("Pipeline busy — skipping startup ingest.")
+        return
     db = SessionLocal()
     try:
         stats = run_ingest(db)
@@ -42,6 +51,7 @@ def _run_startup_ingest() -> None:
         logger.exception("Startup ingest failed")
     finally:
         db.close()
+        end_pipeline_job()
 
 
 def _run_hype_backfill() -> None:

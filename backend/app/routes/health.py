@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
-from app.schemas import HealthResponse, PipelineConfigResponse, PipelineStepResponse
+from app.deps.pipeline_lock import active_pipeline_job, pipeline_job_in_progress
+from app.schemas import HealthResponse, PipelineConfigResponse, PipelineStatusResponse, PipelineStepResponse
 from app.services.pipeline_config import (
     get_backfill_pipeline_steps,
     get_ingest_pipeline_steps,
@@ -27,3 +28,9 @@ def get_pipeline_steps():
             for step in steps_to_dict(get_backfill_pipeline_steps())
         ],
     )
+
+
+@router.get("/api/pipeline/status", response_model=PipelineStatusResponse)
+def get_pipeline_status():
+    job = active_pipeline_job()
+    return PipelineStatusResponse(busy=pipeline_job_in_progress(), active_job=job)

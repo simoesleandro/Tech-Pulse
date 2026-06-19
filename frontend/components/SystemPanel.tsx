@@ -9,6 +9,7 @@ import {
   type StepStatus,
 } from "@/components/ActivityLog";
 import { PipelineProgressDashboard } from "@/components/PipelineProgressDashboard";
+import { pipelineJobLabel } from "@/hooks/usePipelineStatus";
 import { useParallelPipelineProgress } from "@/hooks/useParallelPipelineProgress";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import {
@@ -29,6 +30,7 @@ import { streamReEnrichBackfill, streamObsidianExport } from "@/lib/pipeline-str
 import type {
   BackfillStatus,
   EnrichBackfillResult,
+  PipelineStatus,
   PipelineStepEvent,
 } from "@/lib/types";
 
@@ -41,7 +43,11 @@ const OBSIDIAN_STEP_ORDER = [
   "write",
 ];
 
-export function SystemPanel() {
+export function SystemPanel({
+  pipelineStatus = { busy: false, active_job: null },
+}: {
+  pipelineStatus?: PipelineStatus;
+}) {
   const router = useRouter();
   const pipeline = usePipelineStream();
   const parallel = useParallelPipelineProgress(OBSIDIAN_STEP_ORDER);
@@ -275,6 +281,7 @@ export function SystemPanel() {
   }
 
   const isBusy = busyAction !== null;
+  const pipelineBlocked = pipelineStatus.busy && !isBusy;
 
   return (
     <div className="rounded-lg border border-border bg-surface-elevated">
@@ -362,7 +369,12 @@ export function SystemPanel() {
             ) : (
               <button
                 type="button"
-                disabled={isBusy || !status?.obsidian_unmarked}
+                disabled={isBusy || !status?.obsidian_unmarked || pipelineBlocked}
+                title={
+                  pipelineBlocked
+                    ? `${pipelineJobLabel(pipelineStatus.active_job)} em andamento`
+                    : undefined
+                }
                 onClick={() => void runObsidianExportStream()}
                 className="btn-interactive rounded-md border border-violet/40 bg-violet/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-violet disabled:opacity-50"
               >
@@ -444,7 +456,12 @@ export function SystemPanel() {
             ) : (
               <button
                 type="button"
-                disabled={isBusy || !status?.legacy_enrichment_pending}
+                disabled={isBusy || !status?.legacy_enrichment_pending || pipelineBlocked}
+                title={
+                  pipelineBlocked
+                    ? `${pipelineJobLabel(pipelineStatus.active_job)} em andamento`
+                    : undefined
+                }
                 onClick={() => void runReEnrichLoop()}
                 className="btn-interactive rounded-md border border-violet/40 bg-violet/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-violet disabled:opacity-50"
               >

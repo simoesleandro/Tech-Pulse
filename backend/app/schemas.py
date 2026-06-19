@@ -83,6 +83,11 @@ class PipelineConfigResponse(BaseModel):
     backfill: list[PipelineStepResponse]
 
 
+class PipelineStatusResponse(BaseModel):
+    busy: bool
+    active_job: str | None = None
+
+
 class IngestResult(BaseModel):
     fetched: int
     skipped_duplicate: int
