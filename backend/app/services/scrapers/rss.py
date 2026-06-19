@@ -1,5 +1,6 @@
 import logging
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
@@ -10,11 +11,8 @@ logger = logging.getLogger(__name__)
 
 # Plug future feeds here, e.g. ("https://tldr.tech/rss", "tldr_tech")
 DEFAULT_RSS_FEEDS = {
-    "tldr_tech": "https://tldr.tech/tech/rss",
     "real_python": "https://realpython.com/atom.xml",
     "pragmatic_engineer": "https://blog.pragmaticengineer.com/rss/",
-    "netflix_tech": "https://netflixtechblog.com/feed",
-    "pycoders": "https://pycoders.com/archive/latest.rss"
 }
 
 
@@ -84,17 +82,28 @@ def fetch_rss_feeds(
     seen_urls: set[str] = set()
 
     if isinstance(feed_map, dict):
-        feed_items = feed_map.items()
+        feed_items = list(feed_map.items())
     else:
-        feed_items = ((name, url) for url, name in feed_map)
+        feed_items = list((name, url) for url, name in feed_map)
 
-    for feed_name, feed_url in feed_items:
-        try:
-            batch = parse_rss_feed(feed_url, source=f"rss/{feed_name}")
-        except (requests.RequestException, ET.ParseError) as exc:
-            logger.warning("RSS fetch failed for %s: %s", feed_url, exc)
-            continue
+    def fetch_one(feed_name: str, feed_url: str) -> list[RawArticle]:
+        return parse_rss_feed(feed_url, source=f"rss/{feed_name}")
 
+    batches: list[list[RawArticle]] = []
+    workers = min(len(feed_items), 4) or 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {
+            pool.submit(fetch_one, feed_name, feed_url): feed_name
+            for feed_name, feed_url in feed_items
+        }
+        for future in as_completed(futures):
+            feed_name = futures[future]
+            try:
+                batches.append(future.result())
+            except (requests.RequestException, ET.ParseError) as exc:
+                logger.warning("RSS fetch failed for %s: %s", feed_name, exc)
+
+    for batch in batches:
         for article in batch:
             if article.url in seen_urls:
                 continue

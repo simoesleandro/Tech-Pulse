@@ -544,34 +544,70 @@ async def enrich_articles_as_completed(
     *,
     skip_triador: bool = False,
 ):
-    total = len(articles)
+    from app.services.ingest import _is_cancelled
+    from app.services.ollama_client import OLLAMA_CONCURRENCY, unload_ollama_model
 
-    async def enrich_one(index: int, article: RawArticle) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
+    total = len(articles)
+    if total == 0:
+        return
+
+    semaphore = asyncio.Semaphore(OLLAMA_CONCURRENCY)
+    article_iter = iter(list(enumerate(articles, start=1)))
+    in_flight: set[asyncio.Task] = set()
+
+    async def enrich_one(
+        index: int, article: RawArticle
+    ) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
         callback = (
             on_agent_progress_factory(index, total, article.title)
             if on_agent_progress_factory
             else None
         )
-        try:
-            enriched = await orquestrador_enriquecimento(
-                article, callback, skip_triador=skip_triador
-            )
-            return index, article, enriched
-        except Exception as exc:
-            return index, article, exc
+        async with semaphore:
+            if _is_cancelled():
+                raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+            try:
+                enriched = await orquestrador_enriquecimento(
+                    article, callback, skip_triador=skip_triador
+                )
+                return index, article, enriched
+            except InterruptedError:
+                raise
+            except Exception as exc:
+                return index, article, exc
 
-    tasks = [
-        asyncio.create_task(enrich_one(index, article))
-        for index, article in enumerate(articles, start=1)
-    ]
+    def schedule_next() -> None:
+        if _is_cancelled():
+            return
+        try:
+            index, article = next(article_iter)
+        except StopIteration:
+            return
+        task = asyncio.create_task(enrich_one(index, article))
+        in_flight.add(task)
+
+    for _ in range(min(OLLAMA_CONCURRENCY, total)):
+        schedule_next()
 
     try:
-        for task in asyncio.as_completed(tasks):
-            yield await task
+        while in_flight:
+            done, _ = await asyncio.wait(
+                in_flight, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in done:
+                in_flight.discard(task)
+                yield await task
+                schedule_next()
+            if _is_cancelled():
+                break
     finally:
-        for t in tasks:
-            if not t.done():
-                t.cancel()
+        for task in in_flight:
+            task.cancel()
+        if in_flight:
+            await asyncio.gather(*in_flight, return_exceptions=True)
+        if _is_cancelled():
+            await unload_ollama_model()
+            raise InterruptedError("Ingestão cancelada — conexão encerrada.")
 
 
 def enrich_article_sync(

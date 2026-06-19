@@ -114,6 +114,9 @@ def _stream_sync_job(job, request: Request):
         while True:
             if await request.is_disconnected():
                 cancel_event.set()
+                from app.services.ollama_client import unload_ollama_model
+
+                asyncio.create_task(unload_ollama_model())
                 task.cancel()
                 break
 
@@ -128,6 +131,9 @@ def _stream_sync_job(job, request: Request):
 
         if not task.done():
             cancel_event.set()
+            from app.services.ollama_client import unload_ollama_model
+
+            asyncio.create_task(unload_ollama_model())
         try:
             await task
         except asyncio.CancelledError:
@@ -709,11 +715,14 @@ async def export_to_obsidian(payload: ObsidianExportRequest, db: Session = Depen
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    if result["exported"] == 0:
+    if result["exported"] == 0 and result.get("skipped", 0) == 0:
         raise HTTPException(
             status_code=500,
             detail="Nenhuma nota exportada. " + "; ".join(result["errors"]),
         )
+
+    if result["exported"] == 0 and result.get("skipped", 0) > 0:
+        return ObsidianExportResult(**result)
 
     return ObsidianExportResult(**result)
 

@@ -54,8 +54,9 @@ export function IngestPanel() {
     }
 
     if (!event.article_index) {
-      setSteps((prev) =>
-        prev.map((step) => {
+      setSteps((prev) => {
+        const stepIndex = prev.findIndex((step) => step.id === event.step_id);
+        return prev.map((step, index) => {
           if (step.id === event.step_id) {
             return {
               ...step,
@@ -63,9 +64,29 @@ export function IngestPanel() {
               detail: event.detail,
             };
           }
+          if (
+            stepIndex !== -1 &&
+            index < stepIndex &&
+            step.status !== "done" &&
+            event.status === "active"
+          ) {
+            return { ...step, status: "done" as const };
+          }
+          if (
+            stepIndex !== -1 &&
+            index < stepIndex &&
+            event.status === "done"
+          ) {
+            return { ...step, status: "done" as const };
+          }
           return step;
-        }),
-      );
+        });
+      });
+      if (event.detail) {
+        setStatusLine(event.detail);
+      } else if (event.step_id === "fetch" && event.status === "active") {
+        setStatusLine("Buscando artigos nas fontes configuradas…");
+      }
       return;
     }
 
@@ -442,6 +463,7 @@ export function IngestPanel() {
                   triador: "🛡️ Triando Artigo (IA)",
                   tradutor: "🇧🇷 Traduzindo Tópicos (IA)",
                   hype: "🔥 Avaliando Hype (IA)",
+                  unified: "🤖 Análise Unificada (IA)",
                   save: "💾 Gravando Item",
                 };
                 return (

@@ -1,0 +1,38 @@
+---
+description: Tech-Pulse — config operacional, ingest, Obsidian e LLM (decisões do projeto)
+alwaysApply: true
+---
+
+# Tech-Pulse — contexto persistente
+
+## Stack e idioma
+- Monorepo: FastAPI (`backend/`) + Next.js (`frontend/`), UI em PT-BR.
+- Responder ao usuário em português.
+
+## Obsidian
+- Vault: `C:\Users\stife\Documents\Segundo-Cerebro\Segundo Cérebro`
+- Pasta de notas: `Tech-Pulse`
+- Modo híbrido: `OBSIDIAN_VAULT_PATH` + REST API (abrir nota após export).
+- Export: usar `filter_items_for_export` — pular `obsidian_exported_at` e notas já no vault; marcar IDs encontrados no backfill.
+
+## LLM (config acordada)
+- **Unified (ingest):** `PROVIDER_UNIFIED=ollama` — estável para lotes grandes.
+- **Hype (opcional):** `PROVIDER_HYPE=groq` se key válida.
+- Groq: `GROQ_MODEL=llama-3.3-70b-versatile` (não usar `specdec`).
+- Fallback: se Groq falhar (400 etc.), cair para Ollama sem 5 retries longos.
+- Ollama local: `gemma4:12b`, `OLLAMA_CONCURRENCY=3`.
+
+## Ingest / feed
+- `background_ingest_enabled: false` em `settings.json` — só ingest manual (botão).
+- Fetch paralelo; SSE por fonte no passo 1.
+- Dedup: `normalize_url()` (host, www, trailing slash) — mensagem "já no feed (incl. exportados Obsidian)".
+- Fontes ativas: dev.to, hacker_news, github_trends, rss_feeds.
+- Reddit costuma 403 — retorna vazio, não bloqueia pipeline.
+- RSS padrão: só `real_python` + `pragmatic_engineer` (removidos netflix, pycoders, tldr quebrados).
+
+## UX / pipeline
+- Modo pipeline: `unified` em `settings.json`.
+- Não reprocessar URLs já no SQLite; fetch externo sempre roda, IA só em artigos novos.
+
+## Commits
+- Só commitar quando o usuário pedir explicitamente.

@@ -3,6 +3,8 @@ import functools
 import logging
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -85,22 +87,76 @@ DEFAULT_FETCHERS: list[Fetcher] = [
 ]
 
 
+def normalize_url(url: str) -> str:
+    """Normaliza URL para deduplicação consistente (trailing slash, host, etc.)."""
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+
+    parsed = urlparse(raw)
+    scheme = (parsed.scheme or "https").lower()
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+
+    path = parsed.path.rstrip("/")
+    return urlunparse((scheme, netloc, path, "", "", ""))
+
+
 def _load_existing_urls(db: Session) -> set[str]:
-    return set(db.scalars(select(NewsItem.url)).all())
+    return {
+        normalize_url(url)
+        for url in db.scalars(select(NewsItem.url)).all()
+        if url
+    }
 
 
-def _fetch_all_articles(fetchers: list[Fetcher]) -> tuple[list[RawArticle], list[str]]:
+FETCHER_LABELS: dict[str, str] = {
+    "fetch_devto": "dev.to",
+    "fetch_reddit": "Reddit",
+    "fetch_github_trends": "GitHub Trends",
+    "fetch_hacker_news": "Hacker News",
+    "fetch_rss_feeds": "RSS",
+}
+
+
+def _fetch_all_articles(
+    fetchers: list[Fetcher],
+    on_progress: ProgressEmitter | None = None,
+) -> tuple[list[RawArticle], list[str]]:
     articles: list[RawArticle] = []
     errors: list[str] = []
 
-    for fetcher in fetchers:
+    if not fetchers:
+        return articles, errors
+
+    def run_fetcher(fetcher: Fetcher) -> tuple[list[RawArticle], str | None]:
         name = _fetcher_name(fetcher)
+        label = FETCHER_LABELS.get(name, name)
+        emit_step(on_progress, "fetch", "active", f"Buscando {label}…")
         try:
-            articles.extend(fetcher())
+            batch = fetcher()
+            emit_step(
+                on_progress,
+                "fetch",
+                "active",
+                f"{label}: {len(batch)} artigo(s)",
+            )
+            return batch, None
         except Exception as exc:
-            message = f"{name}: {exc}"
+            message = f"{label}: {exc}"
             logger.warning("Scraper failed %s", message)
-            errors.append(message)
+            emit_step(on_progress, "fetch", "active", f"{label}: falhou")
+            return [], message
+
+    max_workers = min(len(fetchers), 5)
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(run_fetcher, fetcher) for fetcher in fetchers]
+        for future in as_completed(futures):
+            batch, error = future.result()
+            articles.extend(batch)
+            if error:
+                errors.append(error)
 
     return articles, errors
 
@@ -269,7 +325,7 @@ def _persist_enriched_result(
         title=article.title,
     )
 
-    existing_urls.add(article.url)
+    existing_urls.add(normalize_url(article.url))
     stats["saved"] += 1
     if enriched.ai_relevance == "RELEVANTE":
         stats["relevante"] += 1
@@ -314,7 +370,7 @@ async def _enrich_and_persist_streaming(
             )
         except IntegrityError:
             db.rollback()
-            existing_urls.add(article.url)
+            existing_urls.add(normalize_url(article.url))
             stats["skipped_duplicate"] += 1
         except InterruptedError:
             raise
@@ -377,24 +433,28 @@ def run_ingest(
         if sources.get("rss_feeds", True):
             fetchers.append(fetch_rss_feeds)
 
+    emit_step(on_progress, "fetch", "active", "Iniciando busca nas fontes…")
     existing_urls = _load_existing_urls(db)
-
-    emit_step(on_progress, "fetch", "active")
-    articles, scraper_errors = _fetch_all_articles(fetchers)
+    articles, scraper_errors = _fetch_all_articles(fetchers, on_progress)
     emit_step(on_progress, "fetch", "done", f"{len(articles)} artigos capturados")
 
-    emit_step(on_progress, "dedup", "active")
-    pending = [article for article in articles if article.url not in existing_urls]
+    emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
+    pending = [
+        article
+        for article in articles
+        if normalize_url(article.url) not in existing_urls
+    ]
+    skipped = len(articles) - len(pending)
     emit_step(
         on_progress,
         "dedup",
         "done",
-        f"{len(articles) - len(pending)} duplicadas ignoradas · {len(pending)} novos",
+        f"{skipped} já no feed (incl. exportados Obsidian) · {len(pending)} novos",
     )
 
     stats = {
         "fetched": len(articles),
-        "skipped_duplicate": len(articles) - len(pending),
+        "skipped_duplicate": skipped,
         "classified": 0,
         "saved": 0,
         "relevante": 0,
@@ -423,7 +483,7 @@ def run_ingest(
                 )
             except IntegrityError:
                 db.rollback()
-                existing_urls.add(article.url)
+                existing_urls.add(normalize_url(article.url))
                 stats["skipped_duplicate"] += 1
             except InterruptedError:
                 raise

@@ -327,6 +327,41 @@ def _make_obsidian_emit(
     return callback
 
 
+def filter_items_for_export(items: list[NewsItem], db: Session | None = None) -> tuple[list[NewsItem], int]:
+    """Remove itens já exportados ou com nota existente no vault."""
+    if not items:
+        return [], 0
+
+    vault_ids: set[int] = set()
+    if db is not None:
+        from app.services.obsidian_backfill import discover_obsidian_exports
+
+        vault_ids = set(discover_obsidian_exports(db).keys())
+
+    filtered: list[NewsItem] = []
+    skipped = 0
+    to_mark: list[int] = []
+
+    for item in items:
+        if item.obsidian_exported_at is not None:
+            skipped += 1
+            continue
+        if item.id in vault_ids:
+            to_mark.append(item.id)
+            skipped += 1
+            continue
+        filtered.append(item)
+
+    if db is not None and to_mark:
+        mark_items_obsidian_exported(db, to_mark)
+        logger.info(
+            "Obsidian export: %s nota(s) já existiam no vault — marcadas como exportadas.",
+            len(to_mark),
+        )
+
+    return filtered, skipped
+
+
 async def export_items_to_obsidian(
     items: list[NewsItem],
     emit: Callable[[dict], None] | None = None,
@@ -355,6 +390,17 @@ async def export_items_to_obsidian(
         connected, message = check_rest_connection()
         if not connected:
             raise RuntimeError(message or "Não foi possível conectar ao Obsidian.")
+
+    items, skipped = filter_items_for_export(items, db=db)
+    if not items:
+        return {
+            "exported": 0,
+            "exported_ids": [],
+            "paths": [],
+            "mode": mode,
+            "errors": [],
+            "skipped": skipped,
+        }
 
     exported_paths: list[str] = []
     exported_ids: list[int] = []
@@ -455,6 +501,7 @@ async def export_items_to_obsidian(
         "paths": exported_paths,
         "mode": mode,
         "errors": errors,
+        "skipped": skipped,
     }
 
 

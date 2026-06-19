@@ -160,6 +160,7 @@ class ObsidianExportResult(BaseModel):
     paths: list[str]
     mode: str
     errors: list[str] = []
+    skipped: int = 0
 
 
 class ObsidianFormattedItem(BaseModel):

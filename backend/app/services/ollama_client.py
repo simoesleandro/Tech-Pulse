@@ -15,7 +15,7 @@ OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "5m")
 
 # Groq Cloud API Config
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-specdec").strip()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
 # Task Splitting Config
 PROVIDER_SUMMARIZE = os.getenv("PROVIDER_SUMMARIZE", "ollama").strip().lower()
@@ -25,7 +25,7 @@ PROVIDER_ORCHESTRATE = os.getenv("PROVIDER_ORCHESTRATE", "groq").strip().lower()
 PROVIDER_TRIADOR = os.getenv("PROVIDER_TRIADOR", "ollama").strip().lower()
 PROVIDER_TRADUTOR = os.getenv("PROVIDER_TRADUTOR", "ollama").strip().lower()
 PROVIDER_HYPE = os.getenv("PROVIDER_HYPE", "groq").strip().lower()
-PROVIDER_UNIFIED = os.getenv("PROVIDER_UNIFIED", "groq").strip().lower()
+PROVIDER_UNIFIED = os.getenv("PROVIDER_UNIFIED", "ollama").strip().lower()
 
 _resolved_model: str | None = None
 PREFERRED_MODEL_PREFIXES = ("gemma4", "gemma3", "gemma2", "gemma", "llama3", "mistral")
@@ -74,6 +74,42 @@ async def resolve_ollama_model() -> str:
     return _resolved_model
 
 
+def _ingest_was_cancelled() -> bool:
+    try:
+        from app.services.ingest import _is_cancelled
+
+        return _is_cancelled()
+    except ImportError:
+        return False
+
+
+async def unload_ollama_model() -> None:
+    """Descarrega o modelo da VRAM (útil após cancelar ingest)."""
+    model = await resolve_ollama_model()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(
+                OLLAMA_URL,
+                json={"model": model, "prompt": "", "keep_alive": 0},
+            )
+        logger.info("Ollama model unloaded after cancel: %s", model)
+    except Exception as exc:
+        logger.debug("Ollama unload skipped: %s", exc)
+
+
+async def _await_cancellable(coro):
+    task = asyncio.create_task(coro)
+    try:
+        while not task.done():
+            if _ingest_was_cancelled():
+                task.cancel()
+                raise InterruptedError("Ingestão cancelada — conexão encerrada.")
+            await asyncio.sleep(0.2)
+        return await task
+    except asyncio.CancelledError as exc:
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.") from exc
+
+
 async def groq_generate(
     prompt: str,
     system: str | None = None,
@@ -101,8 +137,9 @@ async def groq_generate(
     if options and options.get("format") == "json":
         payload["response_format"] = {"type": "json_object"}
 
-    # Exponential backoff retry loop for HTTP 429 / Rate Limit
+    # Retry only for rate limits and transient server/network errors.
     max_attempts = 5
+    non_retryable = {400, 401, 403, 404, 422}
     for attempt in range(1, max_attempts + 1):
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
@@ -111,7 +148,10 @@ async def groq_generate(
                     json=payload,
                     headers=headers,
                 )
-                
+
+                if response.status_code in non_retryable:
+                    response.raise_for_status()
+
                 # Check for rate limit
                 if response.status_code == 429:
                     retry_after = float(response.headers.get("retry-after", 2 ** attempt))
@@ -171,8 +211,22 @@ async def ollama_generate(
             provider = "groq"
 
     if provider == "groq":
-        logger.info("[LLM] Roteando etapa '%s' para o Groq (%s)", step_name or "default", GROQ_MODEL)
-        return await groq_generate(prompt, system=system, options=options)
+        logger.info(
+            "[LLM] Roteando etapa '%s' para o Groq (%s)",
+            step_name or "default",
+            GROQ_MODEL,
+        )
+        try:
+            return await groq_generate(prompt, system=system, options=options)
+        except Exception as exc:
+            logger.warning(
+                "[LLM] Groq indisponível (%s) — fallback para Ollama (etapa %s)",
+                exc,
+                step_name or "default",
+            )
+
+    if _ingest_was_cancelled():
+        raise InterruptedError("Ingestão cancelada — conexão encerrada.")
 
     # Default to local Ollama
     model = await resolve_ollama_model()
@@ -187,8 +241,11 @@ async def ollama_generate(
     if options:
         payload["options"] = options
 
-    async with _loop_semaphore():
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-            response = await client.post(OLLAMA_URL, json=payload)
-            response.raise_for_status()
-            return response.json().get("response", "").strip()
+    async def _post() -> str:
+        async with _loop_semaphore():
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(OLLAMA_URL, json=payload)
+                response.raise_for_status()
+                return response.json().get("response", "").strip()
+
+    return await _await_cancellable(_post())

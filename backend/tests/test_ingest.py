@@ -92,6 +92,40 @@ def test_ingest_pipeline(db_session: Session):
     assert saved.hype_score >= 0
 
 
+def test_ingest_skips_url_variants_as_duplicates(db_session: Session):
+    db_session.add(
+        NewsItem(
+            title="Artigo existente",
+            title_original="Existing article",
+            description="Já no feed",
+            url="https://Example.com/article",
+            source="rss/test",
+            ai_relevance="RELEVANTE",
+            hype_score=4,
+        )
+    )
+    db_session.commit()
+
+    def fetch_variant() -> list[RawArticle]:
+        return [
+            RawArticle(
+                title="Same article",
+                url="https://www.example.com/article/",
+                source="rss/test",
+            )
+        ]
+
+    stats = run_ingest(
+        db_session,
+        fetchers=[fetch_variant],
+        enricher=_mock_enrich,
+    )
+
+    assert stats["fetched"] == 1
+    assert stats["skipped_duplicate"] == 1
+    assert stats["saved"] == 0
+
+
 def test_ingest_endpoint(client: TestClient):
     mock_stats = {
         "fetched": 2,
