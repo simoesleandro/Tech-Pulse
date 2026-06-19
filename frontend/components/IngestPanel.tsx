@@ -34,7 +34,7 @@ export function IngestPanel() {
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
   const [ingestDefs, setIngestDefs] = useState<PipelineStepDef[]>(INGEST_PIPELINE_STEPS);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [articlesMap, setArticlesMap] = useState<Record<number, { step_id: string; status: string }>>({});
+  const [articlesMap, setArticlesMap] = useState<Record<number, { title: string; step_id: string; status: string; detail?: string; timestamp: number }>>({});
   const [totalArticles, setTotalArticles] = useState(0);
 
   useEffect(() => {
@@ -76,8 +76,11 @@ export function IngestPanel() {
     setArticlesMap((prev) => ({
       ...prev,
       [idx]: {
+        title: event.title || prev[idx]?.title || "",
         step_id: event.step_id,
         status: event.status,
+        detail: event.detail,
+        timestamp: Date.now(),
       },
     }));
 
@@ -356,12 +359,146 @@ export function IngestPanel() {
         </div>
       ) : null}
 
-      <ActivityLog
-        title={logTitle}
-        steps={steps}
-        statusLine={statusLine}
-        visible={isBusy || steps.length > 0}
-      />
+      {logTitle === "Atualizando feed com IA" && totalArticles > 0 ? (
+        <div className="mt-4 rounded-lg border border-border bg-surface-elevated/40 p-4">
+          {/* Header & General Progress */}
+          <div className="flex items-center justify-between border-b border-border/60 pb-3 mb-4">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">{logTitle}</h4>
+              <p className="text-xs text-muted mt-0.5">{statusLine}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono text-cyan font-semibold">
+                {totalArticles > 0
+                  ? Math.round(
+                      (Object.values(articlesMap).filter(
+                        (a) => a.step_id === "save" && a.status === "done",
+                      ).length /
+                        totalArticles) *
+                        100,
+                    )
+                  : 0}
+                %
+              </span>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="h-1.5 w-full bg-border rounded-full overflow-hidden mb-4">
+            <div
+              className="h-full bg-gradient-to-r from-cyan to-violet transition-all duration-300 ease-out"
+              style={{
+                width: `${
+                  totalArticles > 0
+                    ? Math.min(
+                        100,
+                        (Object.values(articlesMap).filter(
+                          (a) => a.step_id === "save" && a.status === "done",
+                        ).length /
+                          totalArticles) *
+                          100,
+                      )
+                    : 0
+                }%`,
+              }}
+            />
+          </div>
+
+          {/* Stats grid */}
+          <div className="grid grid-cols-3 gap-2 mb-4 text-center">
+            <div className="rounded border border-border/55 bg-surface p-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-muted">Total</p>
+              <p className="text-sm font-mono font-semibold text-foreground mt-0.5">{totalArticles}</p>
+            </div>
+            <div className="rounded border border-border/55 bg-surface p-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-emerald">Processados</p>
+              <p className="text-sm font-mono font-semibold text-emerald mt-0.5">
+                {Object.values(articlesMap).filter((a) => a.step_id === "save" && a.status === "done").length}
+              </p>
+            </div>
+            <div className="rounded border border-border/55 bg-surface p-2">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-cyan">Em Andamento</p>
+              <p className="text-sm font-mono font-semibold text-cyan mt-0.5">
+                {Object.values(articlesMap).filter((a) => !(a.step_id === "save" && a.status === "done") && a.status === "active").length}
+              </p>
+            </div>
+          </div>
+
+          {/* Active articles cards */}
+          <div className="space-y-2 mb-4">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">Processando por Agentes de IA</p>
+            {Object.entries(articlesMap)
+              .filter(([_, article]) => !(article.step_id === "save" && article.status === "done"))
+              .map(([idxStr, article]) => {
+                const idx = parseInt(idxStr, 10);
+                const stepLabels: Record<string, string> = {
+                  triador: "🛡️ Triando Artigo (IA)",
+                  tradutor: "🇧🇷 Traduzindo Tópicos (IA)",
+                  hype: "🔥 Avaliando Hype (IA)",
+                  save: "💾 Gravando Item",
+                };
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between rounded-md border border-border/60 bg-surface p-2.5 transition-all duration-200 hover:border-cyan/35"
+                  >
+                    <div className="flex-1 min-w-0 pr-3">
+                      <p className="text-xs font-medium text-foreground truncate">
+                        {article.title || `Artigo #${idx}`}
+                      </p>
+                      <p className="text-[10px] text-muted truncate mt-0.5">
+                        {article.detail || "Iniciando classificação..."}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[9px] font-mono font-medium ${
+                          article.status === "active"
+                            ? "bg-cyan/10 text-cyan border border-cyan/20 animate-pulse"
+                            : "bg-muted/15 text-muted"
+                        }`}
+                      >
+                        {stepLabels[article.step_id] || article.step_id}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            {Object.values(articlesMap).filter((a) => !(a.step_id === "save" && a.status === "done")).length === 0 && (
+              <p className="text-xs text-muted italic text-center py-2">Nenhum artigo ativo no momento.</p>
+            )}
+          </div>
+
+          {/* Recently completed logs */}
+          <div className="border-t border-border/40 pt-3">
+            <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-2">Processados Recentemente</p>
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {Object.entries(articlesMap)
+                .filter(([_, article]) => article.step_id === "save" && article.status === "done")
+                .sort((a, b) => b[1].timestamp - a[1].timestamp)
+                .slice(0, 5)
+                .map(([idxStr, article]) => (
+                  <div key={idxStr} className="flex items-center justify-between text-xs text-muted/90">
+                    <span className="truncate pr-2">✅ {article.title || `Artigo #${idxStr}`}</span>
+                    <span className="text-[9px] font-mono text-emerald/80 flex-shrink-0">
+                      {article.detail?.includes("LIXO") ? "Filtrado (Lixo)" : "Salvo no feed"}
+                    </span>
+                  </div>
+                ))}
+              {Object.values(articlesMap).filter((a) => a.step_id === "save" && a.status === "done").length === 0 && (
+                <p className="text-xs text-muted/60 italic text-center py-1">Nenhum artigo processado ainda.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <ActivityLog
+          title={logTitle}
+          steps={steps}
+          statusLine={statusLine}
+          visible={isBusy || steps.length > 0}
+        />
+      )}
 
       {error ? (
         <p className="mt-3 text-sm text-crimson" role="alert">

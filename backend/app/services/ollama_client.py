@@ -22,6 +22,11 @@ PROVIDER_SUMMARIZE = os.getenv("PROVIDER_SUMMARIZE", "ollama").strip().lower()
 PROVIDER_ANALYZE = os.getenv("PROVIDER_ANALYZE", "groq").strip().lower()
 PROVIDER_ORCHESTRATE = os.getenv("PROVIDER_ORCHESTRATE", "groq").strip().lower()
 
+PROVIDER_TRIADOR = os.getenv("PROVIDER_TRIADOR", "ollama").strip().lower()
+PROVIDER_TRADUTOR = os.getenv("PROVIDER_TRADUTOR", "ollama").strip().lower()
+PROVIDER_HYPE = os.getenv("PROVIDER_HYPE", "groq").strip().lower()
+PROVIDER_UNIFIED = os.getenv("PROVIDER_UNIFIED", "groq").strip().lower()
+
 _resolved_model: str | None = None
 PREFERRED_MODEL_PREFIXES = ("gemma4", "gemma3", "gemma2", "gemma", "llama3", "mistral")
 _LOOP_SEMAPHORE_ATTR = "_techpulse_ollama_sem"
@@ -154,6 +159,14 @@ async def ollama_generate(
             provider = PROVIDER_ANALYZE
         elif step_name == "orchestrate":
             provider = PROVIDER_ORCHESTRATE
+        elif step_name == "triador":
+            provider = PROVIDER_TRIADOR
+        elif step_name == "tradutor":
+            provider = PROVIDER_TRADUTOR
+        elif step_name == "hype":
+            provider = PROVIDER_HYPE
+        elif step_name == "unified":
+            provider = PROVIDER_UNIFIED
         else:
             provider = "groq"
 

@@ -263,7 +263,7 @@ async def agente_triador(article: RawArticle) -> str:
         snippet=snippet[:500],
         source=article.source,
     )
-    raw = await ollama_generate(prompt, system=TRIADOR_SYSTEM)
+    raw = await ollama_generate(prompt, system=TRIADOR_SYSTEM, step_name="triador")
     relevance = _parse_relevance(raw)
     logger.info("[triador] %s → %s", article.url, relevance)
     return relevance
@@ -272,7 +272,7 @@ async def agente_triador(article: RawArticle) -> str:
 async def agente_tradutor(article: RawArticle) -> tuple[str, str]:
     snippet = article.description_snippet or "Sem descrição disponível."
     prompt = TRADUTOR_PROMPT.format(title=article.title, snippet=snippet[:500])
-    raw = await ollama_generate(prompt, system=TRADUTOR_SYSTEM)
+    raw = await ollama_generate(prompt, system=TRADUTOR_SYSTEM, step_name="tradutor")
     title_pt, desc_pt = _parse_tradutor_response(raw, article)
     if article.source == "github_trends":
         from app.services.obsidian_titles import prettify_github_title
@@ -302,7 +302,7 @@ async def agente_hype(
         ups=article.ups,
         engagement_score=engagement_score,
     )
-    raw = await ollama_generate(prompt, system=HYPE_SYSTEM, options=HYPE_OPTIONS)
+    raw = await ollama_generate(prompt, system=HYPE_SYSTEM, options=HYPE_OPTIONS, step_name="hype")
     assessment = _parse_hype_response(raw)
     logger.info("[hype] %s → %s estrelas — %s", article.url, assessment.hype, assessment.reasoning)
     return assessment
@@ -362,7 +362,7 @@ async def agente_unificado(article: RawArticle) -> EnrichedArticle:
         ups=article.ups,
         engagement_score=engagement_score,
     )
-    raw = await ollama_generate(prompt, system=UNIFIED_SYSTEM, options=HYPE_OPTIONS)
+    raw = await ollama_generate(prompt, system=UNIFIED_SYSTEM, options=HYPE_OPTIONS, step_name="unified")
 
     relevance = "LIXO"
     title_pt = article.title
@@ -518,7 +518,7 @@ async def orquestrador_enriquecimento(
 
 async def enrich_articles_parallel(
     articles: list[RawArticle],
-    on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+    on_agent_progress_factory: Callable[[int, int, str], AgentProgressCallback] | None = None,
     *,
     skip_triador: bool = False,
 ) -> list[tuple[int, RawArticle, EnrichedArticle | Exception]]:
@@ -526,7 +526,7 @@ async def enrich_articles_parallel(
 
     async def enrich_one(index: int, article: RawArticle) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
         callback = (
-            on_agent_progress_factory(index, total)
+            on_agent_progress_factory(index, total, article.title)
             if on_agent_progress_factory
             else None
         )
@@ -546,7 +546,7 @@ async def enrich_articles_parallel(
 
 async def enrich_articles_as_completed(
     articles: list[RawArticle],
-    on_agent_progress_factory: Callable[[int, int], AgentProgressCallback] | None = None,
+    on_agent_progress_factory: Callable[[int, int, str], AgentProgressCallback] | None = None,
     *,
     skip_triador: bool = False,
 ):
@@ -554,7 +554,7 @@ async def enrich_articles_as_completed(
 
     async def enrich_one(index: int, article: RawArticle) -> tuple[int, RawArticle, EnrichedArticle | Exception]:
         callback = (
-            on_agent_progress_factory(index, total)
+            on_agent_progress_factory(index, total, article.title)
             if on_agent_progress_factory
             else None
         )

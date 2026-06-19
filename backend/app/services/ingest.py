@@ -171,6 +171,7 @@ def _agent_progress_factory(
     on_progress: ProgressEmitter | None,
     article_index: int,
     article_total: int,
+    title: str,
 ) -> AgentProgressCallback:
     def on_agent_progress(step_id: str, status: str, detail: str | None = None) -> None:
         label = detail or f"artigo {article_index}/{article_total}"
@@ -181,6 +182,7 @@ def _agent_progress_factory(
             label,
             article_index=article_index,
             article_total=article_total,
+            title=title,
         )
 
     return on_agent_progress
@@ -243,6 +245,7 @@ def _persist_enriched_result(
         f"salvando artigo {index}/{total_pending} no SQLite…",
         article_index=index,
         article_total=total_pending,
+        title=article.title,
     )
     db_item = _persist_article(db, article, enriched)
     emit_step(
@@ -252,6 +255,7 @@ def _persist_enriched_result(
         f"artigo {index}/{total_pending} salvo · {enriched.title_pt[:60]}",
         article_index=index,
         article_total=total_pending,
+        title=article.title,
     )
 
     existing_urls.add(article.url)
@@ -274,8 +278,8 @@ async def _enrich_and_persist_streaming(
     existing_urls: set[str],
     stats: dict,
 ) -> None:
-    def factory(index: int, total: int) -> AgentProgressCallback:
-        return _agent_progress_factory(on_progress, index, total)
+    def factory(index: int, total: int, title: str) -> AgentProgressCallback:
+        return _agent_progress_factory(on_progress, index, total, title)
 
     async for index, article, outcome in enrich_articles_as_completed(pending, factory):
         _raise_if_cancelled()
@@ -336,7 +340,7 @@ def _enrich_with_progress(
 ) -> EnrichedArticle:
     return enrich_article_sync(
         article,
-        on_agent_progress=_agent_progress_factory(on_progress, article_index, article_total),
+        on_agent_progress=_agent_progress_factory(on_progress, article_index, article_total, article.title),
     )
 
 
@@ -476,8 +480,8 @@ async def _parallel_enrich_items(
 
     emit_step(on_progress, "pick", "active", f"{total} selecionado(s)")
 
-    def factory(index: int, count: int) -> AgentProgressCallback:
-        return _agent_progress_factory(on_progress, index, count)
+    def factory(index: int, count: int, title: str) -> AgentProgressCallback:
+        return _agent_progress_factory(on_progress, index, count, title)
 
     outcomes: list[tuple[NewsItem, RawArticle, EnrichedArticle | Exception]] = []
     async for _index, article, outcome in enrich_articles_as_completed(
@@ -520,10 +524,10 @@ def _run_parallel_item_enrichment(
                 continue
 
             try:
-                emit_step(on_progress, "save", "active", article.title[:80])
+                emit_step(on_progress, "save", "active", article.title[:80], title=article.title)
                 _apply_enriched_to_item(item, article, outcome)
                 db.commit()
-                emit_step(on_progress, "save", "done", outcome.title_pt[:80])
+                emit_step(on_progress, "save", "done", outcome.title_pt[:80], title=article.title)
                 processed += 1
             except Exception as exc:
                 db.rollback()
