@@ -83,10 +83,23 @@ def _run_obsidian_backfill() -> None:
 
 def _run_migrations() -> None:
     try:
-        from alembic.config import Config
         from alembic import command
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+        from sqlalchemy import inspect
 
         alembic_cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        inspector = inspect(engine)
+        existing_tables = set(inspector.get_table_names())
+
+        if "news_items" in existing_tables:
+            with engine.connect() as conn:
+                current = MigrationContext.configure(conn).get_current_revision()
+            if current is None:
+                command.stamp(alembic_cfg, "head")
+                logger.info("Existing SQLite schema detected — stamped Alembic at head")
+                return
+
         command.upgrade(alembic_cfg, "head")
     except Exception:
         logger.exception("Alembic upgrade failed — falling back to create_all + migrate_sqlite_schema")
