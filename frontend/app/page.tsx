@@ -96,38 +96,43 @@ export default async function Home({
   let apiError: string | null = null;
   let foldersError: string | null = null;
 
-  try {
-    unreadCount = await getUnreadCount();
-  } catch {
+  const feedPromise = getFeedPage({
+    view,
+    folderId,
+    page,
+    source,
+    hype,
+    min_hype: minHype,
+    obsidian_exported: obsidianExported,
+    q,
+  });
+
+  const [unreadResult, feedResult, foldersResult] = await Promise.allSettled([
+    getUnreadCount(),
+    feedPromise,
+    fetchFolders(),
+  ]);
+
+  if (unreadResult.status === "fulfilled") {
+    unreadCount = unreadResult.value;
+  } else {
     apiError =
       "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
   }
 
-  if (!apiError) {
-    try {
-      const feed = await getFeedPage({
-        view,
-        folderId,
-        page,
-        source,
-        hype,
-        min_hype: minHype,
-        obsidian_exported: obsidianExported,
-        q,
-      });
-      items = feed.items;
-      feedTotal = feed.total;
-    } catch {
-      apiError =
-        "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
-    }
+  if (feedResult.status === "fulfilled") {
+    items = feedResult.value.items;
+    feedTotal = feedResult.value.total;
+  } else if (!apiError) {
+    apiError =
+      "Backend indisponível. Inicie a API em localhost:8000 e recarregue a página.";
   }
 
-  try {
-    folders = await fetchFolders();
-  } catch {
+  if (foldersResult.status === "rejected") {
     foldersError =
       "Não foi possível carregar as pastas. Reinicie o backend com o código mais recente.";
+  } else {
+    folders = foldersResult.value;
   }
 
   const hasActiveFilters = Boolean(

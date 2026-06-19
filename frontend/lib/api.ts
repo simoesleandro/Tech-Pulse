@@ -98,14 +98,20 @@ function buildNewsCountUrl(filters?: Omit<NewsFilters, "limit" | "offset">): str
   return `/api/news/count${query ? `?${query}` : ""}`;
 }
 
+const SSR_API_TIMEOUT_MS = 8_000;
+
 export async function fetchNews(filters?: NewsFilters): Promise<NewsListResponse> {
-  return apiJson<NewsListResponse>(buildNewsUrl(filters));
+  return apiJson<NewsListResponse>(buildNewsUrl(filters), {
+    timeoutMs: SSR_API_TIMEOUT_MS,
+  });
 }
 
 export async function fetchNewsCount(
   filters?: Omit<NewsFilters, "limit" | "offset">,
 ): Promise<number> {
-  const response = await apiJson<{ count: number }>(buildNewsCountUrl(filters));
+  const response = await apiJson<{ count: number }>(buildNewsCountUrl(filters), {
+    timeoutMs: SSR_API_TIMEOUT_MS,
+  });
   return response.count;
 }
 
@@ -191,7 +197,7 @@ export const getUnreadCount = cache(async (): Promise<number> => {
 });
 
 export async function fetchFolders(): Promise<TopicFolder[]> {
-  return apiJson<TopicFolder[]>("/api/folders");
+  return apiJson<TopicFolder[]>("/api/folders", { timeoutMs: SSR_API_TIMEOUT_MS });
 }
 
 export async function createFolder(name: string): Promise<TopicFolder> {

@@ -125,7 +125,7 @@ async def app_lifespan(app):
     asyncio.create_task(asyncio.to_thread(_run_obsidian_backfill))
 
     if config.ingest_on_startup:
-        await asyncio.to_thread(_run_startup_ingest)
+        asyncio.create_task(asyncio.to_thread(_run_startup_ingest))
 
     ingest_task = asyncio.create_task(_ingest_loop())
 
