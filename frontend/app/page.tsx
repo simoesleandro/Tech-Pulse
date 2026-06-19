@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { AdminDrawer } from "@/components/AdminDrawer";
+import { FeedNewArticlesBanner } from "@/components/FeedNewArticlesBanner";
 import { FilterBar } from "@/components/FilterBar";
 import { FolderPanel } from "@/components/FolderPanel";
 import { Header } from "@/components/Header";
@@ -176,6 +177,21 @@ export default async function Home({
               >
                 {foldersError}
               </div>
+            ) : null}
+
+            {!apiError ? (
+              <FeedNewArticlesBanner
+                initialTotal={feedTotal}
+                query={{
+                  view,
+                  folderId,
+                  source,
+                  hype,
+                  min_hype: minHype,
+                  obsidian_exported: obsidianExported,
+                  q,
+                }}
+              />
             ) : null}
 
             {apiError ? (

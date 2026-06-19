@@ -22,6 +22,7 @@ export function UnreadCount({ initialCount }: UnreadCountProps) {
         const next = await fetchNewsCount({
           is_read: false,
           ai_relevance: "RELEVANTE",
+          obsidian_exported: false,
         });
         setCount(next);
       } catch {

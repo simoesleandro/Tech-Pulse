@@ -126,11 +126,12 @@ export interface FeedQueryOptions {
   q?: string;
 }
 
-function viewToFilters(
-  view: FeedView,
-  folderId?: number,
-  extra?: Pick<FeedQueryOptions, "source" | "hype" | "min_hype" | "obsidian_exported" | "q">,
+export type FeedCountOptions = Omit<FeedQueryOptions, "page">;
+
+export function buildFeedCountFilters(
+  options: FeedCountOptions,
 ): Omit<NewsFilters, "limit" | "offset"> {
+  const { view, folderId } = options;
   const filters: Omit<NewsFilters, "limit" | "offset"> = {};
 
   if (view === "read") {
@@ -147,7 +148,7 @@ function viewToFilters(
   } else {
     filters.is_read = false;
     filters.ai_relevance = "RELEVANTE";
-    if (extra?.obsidian_exported === undefined) {
+    if (options.obsidian_exported === undefined) {
       filters.obsidian_exported = false;
     }
   }
@@ -156,29 +157,33 @@ function viewToFilters(
     filters.folder_id = folderId;
   }
 
-  if (extra?.source) {
-    filters.source = extra.source;
+  if (options.source) {
+    filters.source = options.source;
   }
-  if (extra?.hype !== undefined) {
-    filters.hype = extra.hype;
+  if (options.hype !== undefined) {
+    filters.hype = options.hype;
   }
-  if (extra?.min_hype !== undefined) {
-    filters.min_hype = extra.min_hype;
+  if (options.min_hype !== undefined) {
+    filters.min_hype = options.min_hype;
   }
-  if (extra?.obsidian_exported !== undefined) {
-    filters.obsidian_exported = extra.obsidian_exported;
+  if (options.obsidian_exported !== undefined) {
+    filters.obsidian_exported = options.obsidian_exported;
   }
-  if (extra?.q) {
-    filters.q = extra.q;
+  if (options.q) {
+    filters.q = options.q;
   }
 
   return filters;
 }
 
+export async function fetchFeedCount(options: FeedCountOptions): Promise<number> {
+  return fetchNewsCount(buildFeedCountFilters(options));
+}
+
 export const getFeedPage = cache(
   async (options: FeedQueryOptions): Promise<NewsListResponse> => {
     const page = Math.max(1, options.page ?? 1);
-    const baseFilters = viewToFilters(options.view, options.folderId, options);
+    const baseFilters = buildFeedCountFilters(options);
 
     return fetchNews({
       ...baseFilters,
