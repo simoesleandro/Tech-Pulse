@@ -1,0 +1,16 @@
+target-version = "py311"
+line-length = 100
+
+[lint]
+select = ["F", "E", "I", "B"]
+ignore = [
+    "E501",
+    "B008",
+    "B904",
+]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"
