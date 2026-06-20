@@ -217,12 +217,23 @@ def needs_agent_refresh(item: NewsItem) -> bool:
 
 
 def _count_legacy_enrichment(db: Session) -> int:
-    items = db.scalars(
-        select(NewsItem)
-        .where(NewsItem.is_enriched.is_(True))
-        .where(NewsItem.ai_relevance == "RELEVANTE")
-    ).all()
-    return sum(1 for item in items if needs_agent_refresh(item))
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(NewsItem)
+            .where(NewsItem.is_enriched.is_(True))
+            .where(NewsItem.ai_relevance == "RELEVANTE")
+            .where(
+                or_(
+                    NewsItem.ai_reasoning.is_(None),
+                    NewsItem.ai_reasoning == "",
+                    NewsItem.ai_reasoning.notlike("%Novidade%"),
+                    NewsItem.ai_reasoning.notlike("%Utilidade%"),
+                )
+            )
+        )
+        or 0
+    )
 
 
 def get_backfill_status(db: Session) -> dict[str, int]:
