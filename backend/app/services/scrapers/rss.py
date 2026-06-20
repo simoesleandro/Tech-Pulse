@@ -2,6 +2,8 @@ import logging
 import defusedxml.ElementTree as ET
 from xml.etree.ElementTree import Element  # type annotation only; parsing uses defusedxml
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
 
@@ -55,6 +57,41 @@ def _item_link(item: Element) -> str:
     return ""
 
 
+def _parse_pub_date(item: ET.Element) -> "datetime | None":
+    """Extrai pub_date de um item/entry XML. Suporta RSS 2.0 (pubDate) e Atom (published/updated)."""
+    for tag in ("pubDate", "published", "updated"):
+        text = _item_text(item, tag)
+        if not text:
+            continue
+        # Tentar RFC 2822 (RSS 2.0: "Mon, 01 Jan 2024 12:00:00 +0000")
+        try:
+            dt = parsedate_to_datetime(text)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            pass
+        # Tentar ISO 8601 (Atom: "2024-01-01T12:00:00Z" ou "2024-01-01T12:00:00+00:00")
+        try:
+            text_clean = text.rstrip("Z") + "+00:00" if text.endswith("Z") else text
+            dt = datetime.fromisoformat(text_clean)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            pass
+    return None
+
+
+def _item_content_length(item: ET.Element, description: str) -> int:
+    """Retorna o tamanho do conteúdo disponível no feed (content > summary > description)."""
+    for tag in ("content", "content:encoded", "summary"):
+        text = _item_text(item, tag)
+        if text:
+            return len(text)
+    return len(description)
+
+
 def parse_rss_feed(
     feed_url: str,
     source: str = "rss",
@@ -89,6 +126,8 @@ def parse_rss_feed(
                 url=link,
                 source=source,
                 description_snippet=description[:280],
+                pub_date=_parse_pub_date(element),
+                content_length=_item_content_length(element, description),
             )
         )
         if len(articles) >= max_items:

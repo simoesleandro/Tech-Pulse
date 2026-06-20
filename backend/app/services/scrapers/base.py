@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -11,6 +12,8 @@ class RawArticle:
     comments_count: int = 0
     stars: int = 0
     ups: int = 0
+    pub_date: datetime | None = None    # data de publicação original do feed
+    content_length: int = 0             # tamanho do conteúdo em caracteres
 
 
 @dataclass(frozen=True)
