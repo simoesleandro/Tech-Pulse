@@ -9,10 +9,32 @@ from app.services.scrapers.http_utils import BROWSER_HEADERS, REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
-# Plug future feeds here, e.g. ("https://tldr.tech/rss", "tldr_tech")
+MAX_ITEMS_PER_FEED = 12
+
+# Curadoria: programação, web (JS/React/Node/CSS), IA/LLM e releases de linguagens.
 DEFAULT_RSS_FEEDS = {
+    # Curadoria / notícias tech
+    "tldr_tech": "https://tldr.tech/rss",
+    "lobsters": "https://lobste.rs/rss",
+    "github_blog": "https://github.blog/feed/",
+    "mozilla_hacks": "https://hacks.mozilla.org/feed/",
+    "smashing_magazine": "https://www.smashingmagazine.com/feed/",
+    "css_tricks": "https://css-tricks.com/category/articles/feed/",
+    "changelog": "https://changelog.com/posts/feed",
+    # IA / LLM
+    "simon_willison": "https://simonwillison.net/atom/everything/",
+    "huggingface": "https://huggingface.co/blog/feed.xml",
+    "openai_blog": "https://openai.com/blog/rss.xml",
+    # Linguagens / runtimes
+    "python_insider": "https://blog.python.org/feeds/posts/default",
     "real_python": "https://realpython.com/atom.xml",
+    "nodejs_blog": "https://nodejs.org/en/feed/blog.xml",
+    "react_blog": "https://react.dev/rss.xml",
+    "typescript_blog": "https://devblogs.microsoft.com/typescript/feed/",
+    "deno_blog": "https://deno.com/feed",
+    # Engenharia
     "pragmatic_engineer": "https://blog.pragmaticengineer.com/rss/",
+    "infoq": "https://feed.infoq.com/",
 }
 
 
@@ -38,7 +60,11 @@ def _item_link(item: ET.Element) -> str:
     return ""
 
 
-def parse_rss_feed(feed_url: str, source: str = "rss") -> list[RawArticle]:
+def parse_rss_feed(
+    feed_url: str,
+    source: str = "rss",
+    max_items: int = MAX_ITEMS_PER_FEED,
+) -> list[RawArticle]:
     response = requests.get(
         feed_url,
         headers=BROWSER_HEADERS,
@@ -70,6 +96,8 @@ def parse_rss_feed(feed_url: str, source: str = "rss") -> list[RawArticle]:
                 description_snippet=description[:280],
             )
         )
+        if len(articles) >= max_items:
+            break
 
     return articles
 
@@ -84,13 +112,13 @@ def fetch_rss_feeds(
     if isinstance(feed_map, dict):
         feed_items = list(feed_map.items())
     else:
-        feed_items = list((name, url) for url, name in feed_map)
+        feed_items = list(feed_map)
 
     def fetch_one(feed_name: str, feed_url: str) -> list[RawArticle]:
         return parse_rss_feed(feed_url, source=f"rss/{feed_name}")
 
     batches: list[list[RawArticle]] = []
-    workers = min(len(feed_items), 4) or 1
+    workers = min(len(feed_items), 8) or 1
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
             pool.submit(fetch_one, feed_name, feed_url): feed_name

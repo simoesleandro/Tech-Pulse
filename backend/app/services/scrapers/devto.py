@@ -1,11 +1,26 @@
+import logging
+
 import requests
 
 from app.services.scrapers.base import RawArticle
 from app.services.scrapers.http_utils import REQUEST_TIMEOUT
 
+logger = logging.getLogger(__name__)
+
 DEVTO_API_URL = "https://dev.to/api/articles"
-DEFAULT_TAGS = ("python", "ai")
-DEFAULT_LIMIT = 10
+DEFAULT_TAGS = (
+    "javascript",
+    "react",
+    "node",
+    "typescript",
+    "css",
+    "webdev",
+    "ai",
+    "llm",
+    "python",
+    "nextjs",
+)
+DEFAULT_LIMIT = 8
 
 
 def fetch_devto_by_tag(tag: str, limit: int = DEFAULT_LIMIT) -> list[RawArticle]:
@@ -42,7 +57,13 @@ def fetch_devto(
     seen_urls: set[str] = set()
 
     for tag in tags:
-        for article in fetch_devto_by_tag(tag, limit=limit):
+        try:
+            batch = fetch_devto_by_tag(tag, limit=limit)
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("dev.to fetch failed for tag %s: %s", tag, exc)
+            continue
+
+        for article in batch:
             if article.url in seen_urls:
                 continue
             seen_urls.add(article.url)

@@ -1,12 +1,24 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchFeedCount, type FeedCountOptions } from "@/lib/api";
 import { dispatchFeedMutation } from "@/lib/feed-mutations";
 
 const POLL_INTERVAL_MS = 90_000;
+
+function buildFilterKey(options: FeedCountOptions): string {
+  return JSON.stringify({
+    view: options.view,
+    folderId: options.folderId ?? null,
+    source: options.source ?? null,
+    hype: options.hype ?? null,
+    min_hype: options.min_hype ?? null,
+    obsidian_exported: options.obsidian_exported ?? null,
+    q: options.q ?? null,
+  });
+}
 
 export function useFeedNewArticles(
   initialTotal: number,
@@ -20,7 +32,15 @@ export function useFeedNewArticles(
   const [pendingNew, setPendingNew] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const filterKey = JSON.stringify(options);
+  const filterKey = useMemo(() => buildFilterKey(options), [
+    options.view,
+    options.folderId,
+    options.source,
+    options.hype,
+    options.min_hype,
+    options.obsidian_exported,
+    options.q,
+  ]);
 
   useEffect(() => {
     baselineRef.current = initialTotal;
@@ -30,7 +50,7 @@ export function useFeedNewArticles(
   useEffect(() => {
     if (!enabled) {
       setPendingNew(0);
-      return;
+      return undefined;
     }
 
     async function poll() {
@@ -47,12 +67,13 @@ export function useFeedNewArticles(
       }
     }
 
-    const timer = setInterval(() => void poll(), POLL_INTERVAL_MS);
-    document.addEventListener("visibilitychange", poll);
+    const timer = window.setInterval(() => void poll(), POLL_INTERVAL_MS);
+    const onVisibilityChange = () => void poll();
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", poll);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [enabled, filterKey]);
 
@@ -66,14 +87,14 @@ export function useFeedNewArticles(
 
   const dismiss = useCallback(() => {
     setPendingNew(0);
-    void fetchFeedCount(options)
+    void fetchFeedCount(optionsRef.current)
       .then((count) => {
         baselineRef.current = count;
       })
       .catch(() => {
         baselineRef.current = initialTotal;
       });
-  }, [initialTotal, options]);
+  }, [initialTotal]);
 
   return { pendingNew, isRefreshing, refresh, dismiss };
 }

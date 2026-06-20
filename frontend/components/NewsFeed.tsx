@@ -69,10 +69,25 @@ export function NewsFeed({
     selection.removeFromSelection(id);
   }
 
+  const obsidianExportModal = (
+    <ObsidianExportModal
+      ids={bulk.obsidianExportIds ?? []}
+      open={Boolean(bulk.obsidianExportIds?.length)}
+      onClose={() => {
+        bulk.setObsidianExportIds(null);
+        bulk.setExportMarkReadOnComplete(false);
+      }}
+      onComplete={(result) => {
+        void bulk.handleObsidianExportComplete(result);
+      }}
+    />
+  );
+
   if (feed.items.length === 0) {
     return (
       <>
         <EmptyState view={view} hasActiveFilters={hasActiveFilters} />
+        {obsidianExportModal}
         {dialog}
       </>
     );
@@ -114,17 +129,7 @@ export function NewsFeed({
           </button>
         </div>
 
-        <ObsidianExportModal
-          ids={bulk.obsidianExportIds ?? []}
-          open={Boolean(bulk.obsidianExportIds?.length)}
-          onClose={() => {
-            bulk.setObsidianExportIds(null);
-            bulk.setExportMarkReadOnComplete(false);
-          }}
-          onComplete={(result) => {
-            void bulk.handleObsidianExportComplete(result);
-          }}
-        />
+        {obsidianExportModal}
       </div>
     );
   }
@@ -196,17 +201,7 @@ export function NewsFeed({
         }
       />
 
-      <ObsidianExportModal
-        ids={bulk.obsidianExportIds ?? []}
-        open={Boolean(bulk.obsidianExportIds?.length)}
-        onClose={() => {
-          bulk.setObsidianExportIds(null);
-          bulk.setExportMarkReadOnComplete(false);
-        }}
-        onComplete={(result) => {
-          void bulk.handleObsidianExportComplete(result);
-        }}
-      />
+      {obsidianExportModal}
 
       <NewsDetailDrawer
         item={feed.activeDetailItem}

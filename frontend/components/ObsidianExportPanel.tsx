@@ -7,7 +7,7 @@ import {
   markAllDone,
   type ActivityStep,
 } from "@/components/ActivityLog";
-import { streamObsidianExport } from "@/lib/obsidian-stream";
+import { streamObsidianExport } from "@/lib/pipeline-stream";
 import {
   applyObsidianStepEvent,
   formatEta,
@@ -52,6 +52,7 @@ export function ObsidianExportPanel({
       return;
     }
 
+    const abortController = new AbortController();
     let cancelled = false;
     setMinimized(false);
 
@@ -74,7 +75,7 @@ export function ObsidianExportPanel({
           return;
         }
 
-        setSteps((prev) => applyObsidianStepEvent(OBSIDIAN_PIPELINE_STEPS, event));
+        setSteps(applyObsidianStepEvent(OBSIDIAN_PIPELINE_STEPS, event));
 
         if (event.article_index && event.article_total) {
           const prefix = `Nota ${event.article_index}/${event.article_total}`;
@@ -91,8 +92,12 @@ export function ObsidianExportPanel({
       }
 
       try {
-        const result = await streamObsidianExport(ids, handleEvent);
-        if (cancelled) {
+        const result = await streamObsidianExport(
+          ids,
+          handleEvent,
+          abortController.signal,
+        );
+        if (cancelled || abortController.signal.aborted) {
           return;
         }
         setSteps((prev) =>
@@ -107,7 +112,7 @@ export function ObsidianExportPanel({
         setDone(true);
         onComplete?.(result);
       } catch (err) {
-        if (cancelled) {
+        if (cancelled || abortController.signal.aborted) {
           return;
         }
         setSteps([
@@ -131,6 +136,7 @@ export function ObsidianExportPanel({
 
     return () => {
       cancelled = true;
+      abortController.abort();
     };
   }, [open, ids.join(",")]);
 

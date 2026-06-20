@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from app.services.scrapers.devto import fetch_devto_by_tag
+from app.services.scrapers.github_trends import fetch_github_trends
 from app.services.scrapers.hacker_news import fetch_hacker_news
 from app.services.scrapers.reddit import fetch_reddit_subreddit
 from app.services.scrapers.rss import fetch_rss_feeds, parse_rss_feed
@@ -150,3 +151,48 @@ def test_fetch_rss_feeds_iterates_dict_feeds():
 
     assert len(articles) == 1
     assert articles[0].source == "rss/custom_feed"
+
+
+def test_parse_rss_feed_respects_max_items():
+    items = "".join(
+        f"<item><title>Post {index}</title>"
+        f"<link>https://example.com/{index}</link>"
+        f"<description>Summary {index}</description></item>"
+        for index in range(20)
+    )
+    xml = f'<?xml version="1.0"?><rss><channel>{items}</channel></rss>'
+
+    with patch("app.services.scrapers.rss.requests.get") as mock_get:
+        mock_get.return_value.content = xml.encode("utf-8")
+        mock_get.return_value.raise_for_status = MagicMock()
+        articles = parse_rss_feed("https://example.com/feed.xml", max_items=5)
+
+    assert len(articles) == 5
+
+
+def test_fetch_github_trends_deduplicates_across_queries():
+    payload = {
+        "items": [
+            {
+                "full_name": "acme/llm-kit",
+                "html_url": "https://github.com/acme/llm-kit",
+                "description": "MCP server for agents",
+                "stargazers_count": 120,
+            }
+        ]
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = payload
+    mock_response.raise_for_status = MagicMock()
+
+    with patch(
+        "app.services.scrapers.github_trends.requests.get",
+        return_value=mock_response,
+    ) as mock_get:
+        articles = fetch_github_trends(limit=10)
+
+    assert len(articles) == 1
+    assert articles[0].title == "acme/llm-kit"
+    assert mock_get.call_count >= 1

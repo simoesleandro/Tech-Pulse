@@ -8,8 +8,21 @@ from app.services.scrapers.http_utils import BROWSER_HEADERS, REQUEST_TIMEOUT
 logger = logging.getLogger(__name__)
 
 REDDIT_JSON_URL = "https://www.reddit.com/r/{subreddit}/top/.json"
-DEFAULT_SUBREDDITS = ("Python", "programming", "devops", "artificial")
-DEFAULT_LIMIT = 10
+DEFAULT_SUBREDDITS = (
+    "programming",
+    "webdev",
+    "javascript",
+    "reactjs",
+    "node",
+    "css",
+    "Python",
+    "devops",
+    "artificial",
+    "LocalLLaMA",
+    "ClaudeAI",
+    "MachineLearning",
+)
+DEFAULT_LIMIT = 8
 
 
 def _resolve_post_url(post: dict) -> str:

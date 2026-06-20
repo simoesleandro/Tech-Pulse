@@ -154,8 +154,6 @@ async def export_to_obsidian_stream(
         except RuntimeError as exc:
             emit({"type": "error", "message": str(exc)})
             raise
-        finally:
-            end_pipeline_job()
 
     return stream_sync_job(job, request, job_name="obsidian-export", on_finished=end_pipeline_job)
 

@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/client-api";
+import { apiFetch, ApiError } from "@/lib/client-api";
 import type {
   EnrichBackfillResult,
   IngestResult,
@@ -6,11 +6,32 @@ import type {
   ObsidianExportResult,
 } from "@/lib/types";
 
-async function consumeSseStream<T>(
+const PIPELINE_BUSY_RETRY_MS = 500;
+const PIPELINE_BUSY_MAX_RETRIES = 2;
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+}
+
+async function consumeSseStreamOnce<T>(
   path: string,
   onEvent: (event: PipelineStepEvent) => void,
   signal?: AbortSignal,
-  body?: any,
+  body?: unknown,
 ): Promise<T> {
   const response = await apiFetch(path, {
     method: "POST",
@@ -29,7 +50,7 @@ async function consumeSseStream<T>(
   if (signal) {
     signal.addEventListener("abort", () => {
       void reader.cancel().catch(() => {});
-    });
+    }, { once: true });
   }
 
   const decoder = new TextDecoder();
@@ -73,6 +94,36 @@ async function consumeSseStream<T>(
   return result;
 }
 
+async function consumeSseStream<T>(
+  path: string,
+  onEvent: (event: PipelineStepEvent) => void,
+  signal?: AbortSignal,
+  body?: unknown,
+  retryOnBusy = false,
+): Promise<T> {
+  const maxAttempts = retryOnBusy ? PIPELINE_BUSY_MAX_RETRIES + 1 : 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await consumeSseStreamOnce<T>(path, onEvent, signal, body);
+    } catch (err) {
+      const isBusy =
+        err instanceof ApiError &&
+        err.status === 409 &&
+        retryOnBusy &&
+        attempt < maxAttempts - 1;
+
+      if (!isBusy || signal?.aborted) {
+        throw err;
+      }
+
+      await sleep(PIPELINE_BUSY_RETRY_MS, signal);
+    }
+  }
+
+  throw new Error("Pipeline encerrou sem resultado final.");
+}
+
 export async function streamIngest(
   onEvent: (event: PipelineStepEvent) => void,
   signal?: AbortSignal,
@@ -114,5 +165,6 @@ export async function streamObsidianExport(
     onEvent,
     signal,
     { ids },
+    true,
   );
 }
