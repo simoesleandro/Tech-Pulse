@@ -9,3 +9,6 @@ pytest
 pytest-asyncio
 alembic
 defusedxml
+ruff
+mypy
+pytest-cov
