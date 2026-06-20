@@ -8,3 +8,6 @@ python-dotenv
 pytest
 pytest-asyncio
 alembic
+ruff
+mypy
+pytest-cov
