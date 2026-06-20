@@ -210,6 +210,7 @@ class AppSettings(BaseModel):
     obsidian_auto_export: bool = False
     pipeline_mode: str = "unified"
     sources: SourcesSettings
+    digest_webhook_url: str | None = None
 
 
 class ObsidianConceptResponse(BaseModel):

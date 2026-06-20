@@ -9,6 +9,7 @@ DEFAULT_SETTINGS: dict = AppSettings(
     background_ingest_enabled=False,
     obsidian_auto_export=False,
     pipeline_mode="unified",
+    digest_webhook_url=None,
     sources={
         "dev_to": True,
         "reddit": True,
