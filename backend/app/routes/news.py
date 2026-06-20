@@ -27,12 +27,22 @@ from app.schemas import (
     NewsItemReadUpdate,
     NewsItemResponse,
     NewsListResponse,
+    ObsidianConceptResponse,
     TopicFolderCreate,
     TopicFolderResponse,
 )
+from app.services.concepts import extract_feed_concepts
 from sqlalchemy import select
 
 router = APIRouter(tags=["news"])
+
+
+@router.get("/api/news/concepts", response_model=list[ObsidianConceptResponse])
+def get_news_concepts(
+    limit: int = Query(default=30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return extract_feed_concepts(db, limit=limit)
 
 
 @router.get("/api/news/count", response_model=NewsCountResponse)
