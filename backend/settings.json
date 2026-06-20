@@ -8,5 +8,6 @@
     "github_trends": true,
     "hacker_news": false,
     "rss_feeds": true
-  }
+  },
+  "digest_webhook_url": null
 }
