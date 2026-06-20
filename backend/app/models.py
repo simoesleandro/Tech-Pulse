@@ -53,7 +53,14 @@ class NewsItem(Base):
 
     folder: Mapped["TopicFolder | None"] = relationship(back_populates="items")
 
-    __table_args__ = (Index("idx_news_unread", "is_read", "ai_relevance"),)
+    __table_args__ = (
+        Index("idx_news_unread", "is_read", "ai_relevance"),
+        Index("idx_news_folder", "folder_id"),
+        Index("idx_news_source", "source"),
+        Index("idx_news_obsidian", "obsidian_exported_at"),
+        Index("idx_news_hype", "hype_score"),
+        Index("idx_news_created", "created_at"),
+    )
 
 
 def migrate_sqlite_schema() -> None:
