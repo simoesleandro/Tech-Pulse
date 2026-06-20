@@ -162,9 +162,10 @@ async def generate_obsidian_note(
     *,
     use_agent: bool = True,
     on_progress: ObsidianProgressCallback | None = None,
+    db=None,  # Session | None — passed through to cache article content
 ) -> ObsidianNoteResult:
     if use_agent:
-        return await agente_obsidian(item, on_progress=on_progress)
+        return await agente_obsidian(item, on_progress=on_progress, db=db)
     return fallback_obsidian_body(item)
 
 
@@ -440,7 +441,7 @@ async def export_items_to_obsidian(
                 return
             progress = _make_obsidian_emit(emit, index, total, item.title)
             try:
-                note = await generate_obsidian_note(item, use_agent=True, on_progress=progress)
+                note = await generate_obsidian_note(item, use_agent=True, on_progress=progress, db=db)
                 relative_path = note_relative_path(
                     item,
                     folder=note.folder,

@@ -61,6 +61,20 @@ def _quick_reject(article: RawArticle) -> bool:
     return any(p.search(text) for p in _NOISE_PATTERNS)
 
 
+def _title_bigrams(title: str) -> frozenset[str]:
+    words = re.sub(r"[^\w\s]", "", title.lower()).split()
+    return frozenset(f"{a}_{b}" for a, b in zip(words, words[1:]))
+
+
+def _titles_are_similar(a: str, b: str, threshold: float = 0.65) -> bool:
+    bg_a = _title_bigrams(a)
+    bg_b = _title_bigrams(b)
+    if not bg_a or not bg_b:
+        return False
+    union = len(bg_a | bg_b)
+    return union > 0 and len(bg_a & bg_b) / union >= threshold
+
+
 CancelCheck = Callable[[], bool]
 
 _ingest_cancel_event: threading.Event | None = None
@@ -341,6 +355,39 @@ def trigger_obsidian_auto_export(item_id: int) -> None:
         ).start()
 
 
+def _persist_raw_articles(
+    db: Session,
+    pending: list[RawArticle],
+    existing_urls: set[str],
+) -> dict[str, int]:
+    """Phase 1: insert all pending articles immediately as PENDING before LLM."""
+    id_by_url: dict[str, int] = {}
+    for article in pending:
+        try:
+            item = NewsItem(
+                title=article.title,
+                title_original=article.title,
+                description=article.description_snippet or "",
+                url=article.url,
+                source=article.source,
+                ai_relevance="PENDING",
+                is_enriched=False,
+                engagement_reactions=article.positive_reactions,
+                engagement_comments=article.comments_count,
+                engagement_stars=article.stars,
+                engagement_ups=article.ups,
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            id_by_url[article.url] = item.id
+            existing_urls.add(normalize_url(article.url))
+        except IntegrityError:
+            db.rollback()
+            existing_urls.add(normalize_url(article.url))
+    return id_by_url
+
+
 def _persist_enriched_result(
     db: Session,
     index: int,
@@ -354,6 +401,7 @@ def _persist_enriched_result(
     batch: _BatchPersister | None = None,
     job: PipelineJob | None = None,
     obsidian_auto_export: bool = False,
+    raw_item: NewsItem | None = None,
 ) -> None:
     stats["classified"] += 1
 
@@ -379,7 +427,11 @@ def _persist_enriched_result(
             title=article.title,
         )
 
-    if batch is not None:
+    if raw_item is not None:
+        _apply_enriched_to_item(raw_item, article, enriched)
+        db.commit()
+        db_item = raw_item
+    elif batch is not None:
         db_item = batch.persist(article, enriched)
     else:
         db_item = _persist_article(db, article, enriched)
@@ -427,6 +479,7 @@ async def _enrich_and_persist_streaming(
     batch: _BatchPersister,
     job: PipelineJob | None = None,
     obsidian_auto_export: bool = False,
+    raw_id_by_url: dict[str, int] | None = None,
 ) -> None:
     def factory(index: int, total: int, title: str) -> AgentProgressCallback:
         return _agent_progress_factory(on_progress, index, total, title)
@@ -443,6 +496,10 @@ async def _enrich_and_persist_streaming(
             stats["errors"].append(f"{article.url}: {outcome}")
             continue
 
+        raw_item: NewsItem | None = None
+        if raw_id_by_url and article.url in raw_id_by_url:
+            raw_item = db.get(NewsItem, raw_id_by_url[article.url])
+
         try:
             _persist_enriched_result(
                 db,
@@ -453,13 +510,15 @@ async def _enrich_and_persist_streaming(
                 total_pending,
                 existing_urls,
                 stats,
-                batch=batch,
+                batch=batch if raw_item is None else None,
                 job=job,
                 obsidian_auto_export=obsidian_auto_export,
+                raw_item=raw_item,
             )
         except IntegrityError:
             db.rollback()
-            batch._pending = 0
+            if raw_item is None:
+                batch._pending = 0
             existing_urls.add(normalize_url(article.url))
             stats["skipped_duplicate"] += 1
         except InterruptedError:
@@ -480,6 +539,7 @@ def _run_streaming_enrich(
     batch: _BatchPersister,
     job: PipelineJob | None = None,
     obsidian_auto_export: bool = False,
+    raw_id_by_url: dict[str, int] | None = None,
 ) -> None:
     asyncio.run(
         _enrich_and_persist_streaming(
@@ -492,6 +552,7 @@ def _run_streaming_enrich(
             batch=batch,
             job=job,
             obsidian_auto_export=obsidian_auto_export,
+            raw_id_by_url=raw_id_by_url,
         )
     )
 
@@ -546,22 +607,35 @@ def run_ingest(
 
     job.emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
     noise_rejected = sum(1 for a in articles if _quick_reject(a))
-    pending = [
+    url_deduped = [
         article
         for article in articles
         if normalize_url(article.url) not in existing_urls and not _quick_reject(article)
     ]
-    skipped = len(articles) - len(pending) - noise_rejected
-    job.emit_step(
-        on_progress,
-        "dedup",
-        "done",
-        f"{skipped} já no feed · {noise_rejected} ruído descartado · {len(pending)} novos",
+
+    # Semantic dedup: drop articles whose title is very similar to one already in DB
+    existing_titles = list(
+        db.scalars(
+            select(NewsItem.title_original).where(NewsItem.title_original != "")
+        ).all()
     )
+    seen_titles: list[str] = list(existing_titles)
+    title_rejected = 0
+    pending: list[RawArticle] = []
+    for article in url_deduped:
+        if any(_titles_are_similar(article.title, t) for t in seen_titles):
+            title_rejected += 1
+        else:
+            pending.append(article)
+            seen_titles.append(article.title)
+
+    skipped = len(articles) - len(url_deduped) - noise_rejected
+    reject_detail = f"{skipped} já no feed · {noise_rejected} ruído · {title_rejected} similar · {len(pending)} novos"
+    job.emit_step(on_progress, "dedup", "done", reject_detail)
 
     stats = {
         "fetched": len(articles),
-        "skipped_duplicate": skipped,
+        "skipped_duplicate": skipped + title_rejected,
         "classified": 0,
         "saved": 0,
         "relevante": 0,
@@ -573,10 +647,15 @@ def run_ingest(
 
     _check_cancel()
 
+    # Phase 1: persist all pending articles immediately (ai_relevance="PENDING")
+    # This makes them visible/countable while LLM enrichment runs in Phase 2
+    raw_id_by_url = _persist_raw_articles(db, pending, existing_urls)
+
     try:
         if enricher is not None:
             for index, article in enumerate(pending, start=1):
                 _check_cancel()
+                raw_item = db.get(NewsItem, raw_id_by_url.get(article.url)) if raw_id_by_url.get(article.url) else None
                 try:
                     enriched = enricher(article)
                     _persist_enriched_result(
@@ -588,20 +667,23 @@ def run_ingest(
                         total_pending,
                         existing_urls,
                         stats,
-                        batch=batch,
+                        batch=batch if raw_item is None else None,
                         job=job,
                         obsidian_auto_export=obsidian_auto_export,
+                        raw_item=raw_item,
                     )
                 except IntegrityError:
                     db.rollback()
-                    batch._pending = 0
+                    if raw_item is None:
+                        batch._pending = 0
                     existing_urls.add(normalize_url(article.url))
                     stats["skipped_duplicate"] += 1
                 except InterruptedError:
                     raise
                 except Exception as exc:
                     db.rollback()
-                    batch._pending = 0
+                    if raw_item is None:
+                        batch._pending = 0
                     stats["errors"].append(f"{article.url}: {exc}")
         else:
             _run_streaming_enrich(
@@ -614,6 +696,7 @@ def run_ingest(
                 batch=batch,
                 job=job,
                 obsidian_auto_export=obsidian_auto_export,
+                raw_id_by_url=raw_id_by_url,
             )
     finally:
         batch.flush()

@@ -366,11 +366,18 @@ def _emit(callback: ObsidianProgressCallback | None, step_id: str, status: str, 
 async def agente_obsidian(
     item: NewsItem,
     on_progress: ObsidianProgressCallback | None = None,
+    db=None,  # Session | None — saves fetched body to content_cache
 ) -> ObsidianNoteResult:
     _emit(on_progress, "fetch", "active", "Buscando artigo na fonte…")
-    context, body_chars = fetch_article_context(item)
+    context, body_chars, raw_body = fetch_article_context(item)
     if body_chars > 0:
         _emit(on_progress, "fetch", "done", f"{body_chars:,} caracteres do artigo")
+        if db is not None and raw_body and not getattr(item, "content_cache", None):
+            try:
+                item.content_cache = raw_body
+                db.commit()
+            except Exception as exc:
+                logger.warning("Failed to cache content for %s: %s", item.url, exc)
     else:
         _emit(on_progress, "fetch", "done", "Usando título e resumo (conteúdo completo indisponível)")
 
@@ -463,7 +470,7 @@ async def agente_obsidian(
 
 
 def fallback_obsidian_body(item: NewsItem) -> ObsidianNoteResult:
-    context, _ = fetch_article_context(item)
+    context, _, _body = fetch_article_context(item)
     analysis = _analysis_from_summary(context, item)
     orchestrated = fallback_orchestration(item, analysis)
     from app.services.obsidian_orchestrator import merge_orchestration

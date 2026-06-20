@@ -26,7 +26,7 @@ def test_fetch_article_context_uses_devto_api():
         "app.services.article_content._fetch_devto_body",
         return_value="# Markdown\n\nConteúdo longo do artigo.",
     ):
-        context, chars = fetch_article_context(_item("https://dev.to/author/my-post"))
+        context, chars, _body = fetch_article_context(_item("https://dev.to/author/my-post"))
 
     assert "Conteúdo longo do artigo." in context
     assert chars > 0
@@ -37,6 +37,6 @@ def test_fetch_article_context_falls_back_to_url_fetch():
         "app.services.article_content._fetch_url_text",
         return_value="Texto extraído da página.",
     ):
-        context, _chars = fetch_article_context(_item("https://example.com/post", source="rss"))
+        context, _chars, _body = fetch_article_context(_item("https://example.com/post", source="rss"))
 
     assert "Texto extraído da página." in context

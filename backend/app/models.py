@@ -45,6 +45,7 @@ class NewsItem(Base):
     obsidian_exported_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    content_cache: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -109,6 +110,8 @@ def migrate_sqlite_schema() -> None:
             conn.execute(text("ALTER TABLE news_items ADD COLUMN ai_reasoning TEXT"))
         if "obsidian_exported_at" not in columns:
             conn.execute(text("ALTER TABLE news_items ADD COLUMN obsidian_exported_at TEXT"))
+        if "content_cache" not in columns:
+            conn.execute(text("ALTER TABLE news_items ADD COLUMN content_cache TEXT"))
 
         conn.execute(
             text(

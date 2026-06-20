@@ -119,6 +119,9 @@ def _fetch_url_text(url: str) -> str:
 
 
 def fetch_article_body(item: NewsItem) -> str:
+    cached = getattr(item, "content_cache", None)
+    if cached:
+        return cached
     body = ""
     if item.source == "dev.to" or "dev.to" in item.url:
         body = _fetch_devto_body(item.url)
@@ -127,7 +130,7 @@ def fetch_article_body(item: NewsItem) -> str:
     return body.strip()
 
 
-def fetch_article_context(item: NewsItem, max_chars: int = MAX_CONTEXT_CHARS) -> tuple[str, int]:
+def fetch_article_context(item: NewsItem, max_chars: int = MAX_CONTEXT_CHARS) -> tuple[str, int, str]:
     body = fetch_article_body(item)
 
     parts = [
@@ -154,4 +157,4 @@ def fetch_article_context(item: NewsItem, max_chars: int = MAX_CONTEXT_CHARS) ->
     if engagement_bits:
         parts.append("Engajamento: " + ", ".join(engagement_bits))
 
-    return "\n\n".join(parts), body_chars
+    return "\n\n".join(parts), body_chars, body

@@ -100,7 +100,7 @@ def test_agente_obsidian_falls_back_on_invalid_response():
 
     with patch(
         "app.services.obsidian_agent.fetch_article_context",
-        return_value=("contexto mínimo", 0),
+        return_value=("contexto mínimo", 0, ""),
     ), patch(
         "app.services.obsidian_agent.ollama_generate",
         new_callable=AsyncMock,

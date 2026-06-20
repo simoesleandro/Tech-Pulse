@@ -115,7 +115,7 @@ def test_agente_obsidian_two_phase_pipeline():
 
     with patch(
         "app.services.obsidian_agent.fetch_article_context",
-        return_value=("Conteúdo completo do artigo.", 4200),
+        return_value=("Conteúdo completo do artigo.", 4200, "raw body text"),
     ), patch(
         "app.services.obsidian_agent.ollama_generate",
         new_callable=AsyncMock,
