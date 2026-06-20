@@ -75,6 +75,28 @@ def _titles_are_similar(a: str, b: str, threshold: float = 0.65) -> bool:
     return union > 0 and len(bg_a & bg_b) / union >= threshold
 
 
+def _is_similar_to_any(
+    title: str,
+    precomputed: list[frozenset[str]],
+    threshold: float = 0.65,
+) -> bool:
+    """Check if `title` is similar to any bigram set in `precomputed`.
+
+    Precomputing bigrams of existing titles once (outside the loop) avoids
+    recalculating them for every comparison — reduces O(n*m*|bigrams|) to O(n*m).
+    """
+    bg = _title_bigrams(title)
+    if not bg:
+        return False
+    for existing_bg in precomputed:
+        if not existing_bg:
+            continue
+        union = len(bg | existing_bg)
+        if union > 0 and len(bg & existing_bg) / union >= threshold:
+            return True
+    return False
+
+
 CancelCheck = Callable[[], bool]
 
 _ingest_cancel_event: threading.Event | None = None
@@ -626,6 +648,8 @@ def run_ingest(
 
     # Semantic dedup: drop articles whose title is very similar to one already in DB
     # Limit to last 45 days to keep the bigram comparison set bounded
+    # Semantic dedup: drop articles whose title is very similar to one already in DB
+    # Limit to last 45 days to keep the bigram comparison set bounded
     from datetime import datetime, timezone, timedelta
     _sem_cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     existing_titles = list(
@@ -635,15 +659,16 @@ def run_ingest(
             .where(NewsItem.created_at >= _sem_cutoff)
         ).all()
     )
-    seen_titles: list[str] = list(existing_titles)
+    # Pre-compute bigrams of existing titles once — O(m) — to avoid O(n*m*|bigrams|) recomputation
+    seen_bigrams: list[frozenset[str]] = [_title_bigrams(t) for t in existing_titles]
     title_rejected = 0
     pending: list[RawArticle] = []
     for article in url_deduped:
-        if any(_titles_are_similar(article.title, t) for t in seen_titles):
+        if _is_similar_to_any(article.title, seen_bigrams):
             title_rejected += 1
         else:
             pending.append(article)
-            seen_titles.append(article.title)
+            seen_bigrams.append(_title_bigrams(article.title))
 
     skipped = len(articles) - len(url_deduped) - noise_rejected
     reject_detail = f"{skipped} já no feed · {noise_rejected} ruído · {title_rejected} similar · {len(pending)} novos"
