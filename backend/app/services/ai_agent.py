@@ -420,6 +420,10 @@ async def orquestrador_enriquecimento(
     if _is_cancelled():
         raise InterruptedError("Ingestão cancelada — conexão encerrada.")
 
+    # GitHub Trends queries pre-filter by topic/language — triador adds no signal
+    if pipeline_mode != "unified" and article.source == "github_trends":
+        skip_triador = True
+
     if pipeline_mode == "unified" and not skip_triador:
         emit("unified", "active", article.title[:80])
         enriched = await agente_unificado(article)

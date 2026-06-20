@@ -614,9 +614,14 @@ def run_ingest(
     ]
 
     # Semantic dedup: drop articles whose title is very similar to one already in DB
+    # Limit to last 45 days to keep the bigram comparison set bounded
+    from datetime import datetime, timezone, timedelta
+    _sem_cutoff = datetime.now(timezone.utc) - timedelta(days=45)
     existing_titles = list(
         db.scalars(
-            select(NewsItem.title_original).where(NewsItem.title_original != "")
+            select(NewsItem.title_original)
+            .where(NewsItem.title_original != "")
+            .where(NewsItem.created_at >= _sem_cutoff)
         ).all()
     )
     seen_titles: list[str] = list(existing_titles)

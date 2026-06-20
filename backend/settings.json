@@ -1,12 +1,12 @@
 {
-  "background_ingest_enabled": false,
+  "background_ingest_enabled": true,
   "obsidian_auto_export": false,
   "pipeline_mode": "unified",
   "sources": {
-    "dev_to": true,
+    "dev_to": false,
     "reddit": true,
     "github_trends": true,
-    "hacker_news": true,
+    "hacker_news": false,
     "rss_feeds": true
   }
 }

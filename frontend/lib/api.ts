@@ -115,6 +115,10 @@ export async function fetchNewsCount(
   return response.count;
 }
 
+export async function fetchPendingCount(): Promise<number> {
+  return fetchNewsCount({ ai_relevance: "PENDING" });
+}
+
 export interface FeedQueryOptions {
   view: FeedView;
   folderId?: number;
