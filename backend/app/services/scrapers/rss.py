@@ -1,5 +1,6 @@
 import logging
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
+from xml.etree.ElementTree import Element  # type annotation only; parsing uses defusedxml
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
@@ -36,14 +37,14 @@ def _strip_tag(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _item_text(item: ET.Element, tag: str) -> str:
+def _item_text(item: Element, tag: str) -> str:
     for child in item:
         if _strip_tag(child.tag) == tag and child.text:
             return child.text.strip()
     return ""
 
 
-def _item_link(item: ET.Element) -> str:
+def _item_link(item: Element) -> str:
     for child in item:
         if _strip_tag(child.tag) == "link":
             href = child.attrib.get("href")
