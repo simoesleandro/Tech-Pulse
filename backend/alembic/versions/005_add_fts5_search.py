@@ -7,7 +7,7 @@ Create Date: 2026-06-20
 from alembic import op
 
 revision = "005_fts5_search"
-down_revision = "003_user_relevance"
+down_revision = "004_missing_indexes"
 branch_labels = None
 depends_on = None
 
