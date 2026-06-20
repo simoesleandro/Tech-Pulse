@@ -10,6 +10,7 @@ export interface NewsItem {
   ai_reasoning: string | null;
   is_read: boolean;
   is_bookmarked: boolean;
+  user_relevance: string | null;
   folder_id: number | null;
   folder_name: string | null;
   obsidian_exported_at: string | null;

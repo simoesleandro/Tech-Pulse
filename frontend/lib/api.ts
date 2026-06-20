@@ -258,6 +258,16 @@ export async function patchBookmarkStatus(
   });
 }
 
+export async function patchNewsRelevance(
+  id: number,
+  relevance: "RELEVANTE" | "LIXO",
+): Promise<NewsItem> {
+  return apiJson<NewsItem>(`/api/news/${id}/relevance?relevance=${relevance}`, {
+    method: "PATCH",
+    timeoutMs: 15_000,
+  });
+}
+
 export async function fetchPipelineSteps(): Promise<PipelineConfig> {
   return apiJson<PipelineConfig>("/api/pipeline/steps", {
     timeoutMs: 10_000,

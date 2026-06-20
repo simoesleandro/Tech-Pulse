@@ -18,6 +18,7 @@ def news_to_response(item: NewsItem) -> NewsItemResponse:
         ai_reasoning=item.ai_reasoning,
         is_read=item.is_read,
         is_bookmarked=item.is_bookmarked,
+        user_relevance=item.user_relevance,
         folder_id=item.folder_id,
         folder_name=item.folder.name if item.folder else None,
         obsidian_exported_at=item.obsidian_exported_at,

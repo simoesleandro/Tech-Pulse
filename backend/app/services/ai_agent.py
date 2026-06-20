@@ -258,7 +258,8 @@ def _parse_hype_response(raw: str) -> HypeAssessment:
 
 async def agente_triador(article: RawArticle) -> str:
     snippet = article.description_snippet or "Sem descrição disponível."
-    prompt = TRIADOR_PROMPT.format(
+    shots = _format_feedback_shots()
+    prompt = shots + TRIADOR_PROMPT.format(
         title=article.title,
         snippet=snippet[:500],
         source=article.source,
@@ -314,7 +315,8 @@ AgentProgressCallback = Callable[[str, str, str | None], None]
 async def agente_unificado(article: RawArticle) -> EnrichedArticle:
     snippet = article.description_snippet or "Sem descrição disponível."
     engagement_score = compute_hype_score(article)
-    prompt = UNIFIED_PROMPT.format(
+    shots = _format_feedback_shots()
+    prompt = shots + UNIFIED_PROMPT.format(
         title=article.title,
         snippet=snippet[:500],
         source=article.source,
@@ -400,6 +402,24 @@ async def agente_unificado(article: RawArticle) -> EnrichedArticle:
 
 
 AgentProgressCallback = Callable[[str, str, str | None], None]
+
+# Module-level cache of user feedback examples used for few-shot prompting.
+_feedback_examples: list[dict] = []
+
+
+def update_feedback_cache(examples: list[dict]) -> None:
+    global _feedback_examples
+    _feedback_examples = examples[-20:]
+
+
+def _format_feedback_shots() -> str:
+    examples = _feedback_examples
+    if not examples:
+        return ""
+    lines = ["Calibração com feedback do usuário (priorize esses padrões):"]
+    for ex in examples[-8:]:
+        lines.append(f"  [{ex['verdict']}] \"{ex['title'][:80]}\" (fonte: {ex['source']})")
+    return "\n".join(lines) + "\n\n"
 
 
 async def orquestrador_enriquecimento(

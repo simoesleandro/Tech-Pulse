@@ -81,6 +81,31 @@ def _run_obsidian_backfill() -> None:
         db.close()
 
 
+def _load_feedback_cache() -> None:
+    """Prime the few-shot cache from persisted user_relevance feedback."""
+    db = SessionLocal()
+    try:
+        from sqlalchemy import select
+        from app.models import NewsItem
+        from app.services.ai_agent import update_feedback_cache
+        examples = [
+            {"title": i.title_original, "source": i.source, "verdict": i.user_relevance}
+            for i in db.scalars(
+                select(NewsItem)
+                .where(NewsItem.user_relevance.isnot(None))
+                .order_by(NewsItem.created_at.desc())
+                .limit(20)
+            ).all()
+        ]
+        if examples:
+            update_feedback_cache(examples)
+            logger.info("Loaded %d feedback examples into few-shot cache", len(examples))
+    except Exception:
+        logger.exception("Failed to load feedback cache on startup")
+    finally:
+        db.close()
+
+
 def _run_migrations() -> None:
     try:
         from alembic import command
@@ -120,6 +145,7 @@ async def app_lifespan(app):
         settings.get("pipeline_mode"),
     )
     _run_migrations()
+    _load_feedback_cache()
 
     asyncio.create_task(asyncio.to_thread(_run_hype_backfill))
     asyncio.create_task(asyncio.to_thread(_run_obsidian_backfill))

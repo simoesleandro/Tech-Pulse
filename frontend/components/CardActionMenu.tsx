@@ -8,6 +8,7 @@ import {
   assignNewsFolder,
   deleteNewsItem,
   patchBookmarkStatus,
+  patchNewsRelevance,
   patchReadStatus,
 } from "@/lib/api";
 import { copyObsidianMarkdown } from "@/lib/obsidian-export";
@@ -150,6 +151,30 @@ export function CardActionMenu({
         onUpdate(updated);
       },
     ),
+    // Relevance feedback — teaches the LLM via few-shot examples
+    view === "queue" || view === "read" || view === "saved"
+      ? menuButton(
+          "not-relevant",
+          item.user_relevance === "LIXO" ? "Feedback enviado" : "Não é relevante",
+          "Enviando feedback…",
+          async () => {
+            await patchNewsRelevance(item.id, "LIXO");
+            onRemove?.(item.id);
+          },
+          "danger",
+        )
+      : null,
+    view === "lixo"
+      ? menuButton(
+          "rescue",
+          item.user_relevance === "RELEVANTE" ? "Já resgatado" : "Resgatar para fila",
+          "Resgatando…",
+          async () => {
+            await patchNewsRelevance(item.id, "RELEVANTE");
+            onRemove?.(item.id);
+          },
+        )
+      : null,
   ];
 
   const folderItems =

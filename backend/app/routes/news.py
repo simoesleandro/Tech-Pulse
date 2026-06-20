@@ -192,6 +192,38 @@ def update_bookmark_status(
     return news_to_response(db_item)
 
 
+@router.patch("/api/news/{item_id}/relevance", response_model=NewsItemResponse, dependencies=[Depends(require_api_key)])
+def update_relevance_feedback(
+    item_id: int,
+    relevance: str = Query(pattern="^(RELEVANTE|LIXO)$"),
+    db: Session = Depends(get_db),
+):
+    """User feedback — overrides ai_relevance and updates the few-shot cache."""
+    db_item = db.get(NewsItem, item_id)
+    if db_item is None:
+        raise HTTPException(status_code=404, detail="Notícia não encontrada")
+
+    db_item.user_relevance = relevance
+    db_item.ai_relevance = relevance
+    db.commit()
+
+    # Refresh the few-shot cache used by the triador/unified agents
+    from app.services.ai_agent import update_feedback_cache
+    examples = [
+        {"title": i.title_original, "source": i.source, "verdict": i.user_relevance}
+        for i in db.scalars(
+            select(NewsItem)
+            .where(NewsItem.user_relevance.isnot(None))
+            .order_by(NewsItem.created_at.desc())
+            .limit(20)
+        ).all()
+    ]
+    update_feedback_cache(examples)
+
+    db_item = get_news_with_folder(db, item_id)
+    return news_to_response(db_item)
+
+
 @router.patch("/api/news/{item_id}/folder", response_model=NewsItemResponse, dependencies=[Depends(require_api_key)])
 def update_folder(
     item_id: int,

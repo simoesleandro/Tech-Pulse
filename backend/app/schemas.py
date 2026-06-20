@@ -23,6 +23,7 @@ class NewsItemResponse(NewsItemBase):
     title_original: str
     is_read: bool
     is_bookmarked: bool
+    user_relevance: str | None = None
     folder_id: int | None = None
     folder_name: str | None = None
     obsidian_exported_at: datetime | None = None
