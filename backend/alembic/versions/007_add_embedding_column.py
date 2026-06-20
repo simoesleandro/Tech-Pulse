@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "007_embedding"
-down_revision: Union[str, None] = "003_user_relevance"
+down_revision: Union[str, None] = "006_scraper_runs"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
