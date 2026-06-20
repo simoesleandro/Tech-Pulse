@@ -57,7 +57,7 @@ def _item_link(item: Element) -> str:
     return ""
 
 
-def _parse_pub_date(item: ET.Element) -> "datetime | None":
+def _parse_pub_date(item: Element) -> "datetime | None":
     """Extrai pub_date de um item/entry XML. Suporta RSS 2.0 (pubDate) e Atom (published/updated)."""
     for tag in ("pubDate", "published", "updated"):
         text = _item_text(item, tag)
@@ -83,7 +83,7 @@ def _parse_pub_date(item: ET.Element) -> "datetime | None":
     return None
 
 
-def _item_content_length(item: ET.Element, description: str) -> int:
+def _item_content_length(item: Element, description: str) -> int:
     """Retorna o tamanho do conteúdo disponível no feed (content > summary > description)."""
     for tag in ("content", "content:encoded", "summary"):
         text = _item_text(item, tag)
