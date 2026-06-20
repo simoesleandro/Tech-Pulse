@@ -27,6 +27,18 @@ jobs:
       - name: Run pytest
         run: pytest -q
 
+      - name: Lint (ruff)
+        run: ruff check app/ --output-format=github
+        continue-on-error: true
+
+      - name: Format check (ruff)
+        run: ruff format --check app/
+        continue-on-error: true
+
+      - name: Type check (mypy)
+        run: mypy app/ 2>&1 | tail -20
+        continue-on-error: true
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
