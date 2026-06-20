@@ -1,7 +1,9 @@
 import asyncio
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -195,7 +197,7 @@ def update_bookmark_status(
 @router.patch("/api/news/{item_id}/relevance", response_model=NewsItemResponse, dependencies=[Depends(require_api_key)])
 def update_relevance_feedback(
     item_id: int,
-    relevance: str = Query(pattern="^(RELEVANTE|LIXO)$"),
+    relevance: str = Query(pattern="^(RELEVANTE|LIXO|TALVEZ)$"),
     db: Session = Depends(get_db),
 ):
     """User feedback — overrides ai_relevance and updates the few-shot cache."""
@@ -204,21 +206,37 @@ def update_relevance_feedback(
         raise HTTPException(status_code=404, detail="Notícia não encontrada")
 
     db_item.user_relevance = relevance
-    db_item.ai_relevance = relevance
+    # TALVEZ não sobrescreve ai_relevance — mantém a classificação do LLM intacta
+    if relevance in ("RELEVANTE", "LIXO"):
+        db_item.ai_relevance = relevance
     db.commit()
 
     # Refresh the few-shot cache used by the triador/unified agents
     from app.services.ai_agent import update_feedback_cache
-    examples = [
-        {"title": i.title_original, "source": i.source, "verdict": i.user_relevance}
-        for i in db.scalars(
-            select(NewsItem)
-            .where(NewsItem.user_relevance.isnot(None))
-            .order_by(NewsItem.created_at.desc())
-            .limit(20)
-        ).all()
-    ]
-    update_feedback_cache(examples)
+
+    # Coleta até 4 exemplos por source para garantir diversidade no few-shot
+    # Exclui TALVEZ do few-shot — só RELEVANTE e LIXO calibram o LLM
+    raw_examples = db.scalars(
+        select(NewsItem)
+        .where(NewsItem.user_relevance.in_(["RELEVANTE", "LIXO"]))
+        .order_by(NewsItem.created_at.desc())
+        .limit(100)  # pool grande para selecionar com diversidade
+    ).all()
+
+    # Garante no máximo 4 exemplos por fonte
+    source_counts: dict[str, int] = {}
+    diverse_examples: list[dict] = []
+    for i in raw_examples:
+        src = i.source
+        if source_counts.get(src, 0) < 4:
+            diverse_examples.append(
+                {"title": i.title_original, "source": src, "verdict": i.user_relevance}
+            )
+            source_counts[src] = source_counts.get(src, 0) + 1
+        if len(diverse_examples) >= 20:
+            break
+
+    update_feedback_cache(diverse_examples)
 
     db_item = get_news_with_folder(db, item_id)
     return news_to_response(db_item)
@@ -307,6 +325,43 @@ def _bulk_delete_news(payload: BulkNewsDelete, db: Session) -> BulkNewsResult:
 
     db.commit()
     return BulkNewsResult(affected=len(items))
+
+
+class FeedbackItemResponse(BaseModel):
+    id: int
+    title: str
+    title_original: str
+    source: str
+    user_relevance: str
+    ai_relevance: str
+    created_at: datetime
+
+
+@router.get("/api/feedback", response_model=list[FeedbackItemResponse], dependencies=[Depends(require_api_key)])
+def list_feedback(
+    limit: int = Query(default=50, ge=1, le=200),
+    verdict: str | None = Query(default=None, pattern="^(RELEVANTE|LIXO|TALVEZ)$"),
+    db: Session = Depends(get_db),
+):
+    """Retorna os feedbacks dados pelo usuário, para revisão e auditoria."""
+    query = select(NewsItem).where(NewsItem.user_relevance.isnot(None))
+    if verdict is not None:
+        query = query.where(NewsItem.user_relevance == verdict)
+    items = db.scalars(
+        query.order_by(NewsItem.created_at.desc()).limit(limit)
+    ).all()
+    return [
+        FeedbackItemResponse(
+            id=item.id,
+            title=item.title,
+            title_original=item.title_original,
+            source=item.source,
+            user_relevance=item.user_relevance,
+            ai_relevance=item.ai_relevance,
+            created_at=item.created_at,
+        )
+        for item in items
+    ]
 
 
 @router.delete("/api/news/{item_id}", response_model=BulkNewsResult, dependencies=[Depends(require_api_key)])
