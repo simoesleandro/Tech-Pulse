@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import logging
+import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,6 +47,19 @@ from app.services.scrapers import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Padrões que descartam artigos óbvios sem gastar LLM
+_NOISE_PATTERNS = (
+    re.compile(r"\b(we.?re hiring|open position|join our team|h1.?b|work with us)\b", re.I),
+    re.compile(r"\bnewsletter\s+(issue|#\s*\d|vol\.?\s*\d)", re.I),
+    re.compile(r"\b(giveaway|sweepstakes?|win a)\b", re.I),
+)
+
+
+def _quick_reject(article: RawArticle) -> bool:
+    text = f"{article.title} {article.description_snippet or ''}"
+    return any(p.search(text) for p in _NOISE_PATTERNS)
+
 
 CancelCheck = Callable[[], bool]
 
@@ -339,6 +353,7 @@ def _persist_enriched_result(
     *,
     batch: _BatchPersister | None = None,
     job: PipelineJob | None = None,
+    obsidian_auto_export: bool = False,
 ) -> None:
     stats["classified"] += 1
 
@@ -395,9 +410,7 @@ def _persist_enriched_result(
     stats["saved"] += 1
     if enriched.ai_relevance == "RELEVANTE":
         stats["relevante"] += 1
-        from app.services.settings import load_settings
-        settings = load_settings()
-        if settings.get("obsidian_auto_export", False):
+        if obsidian_auto_export:
             trigger_obsidian_auto_export(db_item.id)
     else:
         stats["lixo"] += 1
@@ -413,6 +426,7 @@ async def _enrich_and_persist_streaming(
     *,
     batch: _BatchPersister,
     job: PipelineJob | None = None,
+    obsidian_auto_export: bool = False,
 ) -> None:
     def factory(index: int, total: int, title: str) -> AgentProgressCallback:
         return _agent_progress_factory(on_progress, index, total, title)
@@ -441,6 +455,7 @@ async def _enrich_and_persist_streaming(
                 stats,
                 batch=batch,
                 job=job,
+                obsidian_auto_export=obsidian_auto_export,
             )
         except IntegrityError:
             db.rollback()
@@ -464,6 +479,7 @@ def _run_streaming_enrich(
     *,
     batch: _BatchPersister,
     job: PipelineJob | None = None,
+    obsidian_auto_export: bool = False,
 ) -> None:
     asyncio.run(
         _enrich_and_persist_streaming(
@@ -475,6 +491,7 @@ def _run_streaming_enrich(
             stats,
             batch=batch,
             job=job,
+            obsidian_auto_export=obsidian_auto_export,
         )
     )
 
@@ -505,9 +522,10 @@ def run_ingest(
         job.raise_if_cancelled()
 
     batch = _BatchPersister(db)
+    from app.services.settings import load_settings
+    settings = load_settings()
+    obsidian_auto_export: bool = bool(settings.get("obsidian_auto_export", False))
     if fetchers is None:
-        from app.services.settings import load_settings
-        settings = load_settings()
         sources = settings.get("sources", {})
         fetchers = []
         if sources.get("dev_to", True):
@@ -527,17 +545,18 @@ def run_ingest(
     job.emit_step(on_progress, "fetch", "done", f"{len(articles)} artigos capturados")
 
     job.emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
+    noise_rejected = sum(1 for a in articles if _quick_reject(a))
     pending = [
         article
         for article in articles
-        if normalize_url(article.url) not in existing_urls
+        if normalize_url(article.url) not in existing_urls and not _quick_reject(article)
     ]
-    skipped = len(articles) - len(pending)
+    skipped = len(articles) - len(pending) - noise_rejected
     job.emit_step(
         on_progress,
         "dedup",
         "done",
-        f"{skipped} já no feed (incl. exportados Obsidian) · {len(pending)} novos",
+        f"{skipped} já no feed · {noise_rejected} ruído descartado · {len(pending)} novos",
     )
 
     stats = {
@@ -571,6 +590,7 @@ def run_ingest(
                         stats,
                         batch=batch,
                         job=job,
+                        obsidian_auto_export=obsidian_auto_export,
                     )
                 except IntegrityError:
                     db.rollback()
@@ -593,6 +613,7 @@ def run_ingest(
                 stats,
                 batch=batch,
                 job=job,
+                obsidian_auto_export=obsidian_auto_export,
             )
     finally:
         batch.flush()

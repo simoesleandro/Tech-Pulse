@@ -90,7 +90,7 @@ Regras: 3-5 topicos com 3-4 pontos cada; mínimo 5 termos; mínimo 4 wikilinks C
 """
 
 SUMMARIZE_OPTIONS = {"temperature": 0.25, "num_predict": 2048}
-ANALYZE_OPTIONS = {"temperature": 0.15, "num_predict": 3072}
+ANALYZE_OPTIONS = {"temperature": 0.15, "num_predict": 1536}
 
 
 def _strip_code_fences(text: str) -> str:
@@ -403,20 +403,14 @@ async def agente_obsidian(
     )
 
     try:
-        for attempt in range(2):
-            raw = await _ollama_with_json_fallback(
-                analyze_prompt if attempt == 0 else analyze_prompt + "\n\nSeja MAIS específico e técnico. Não repita o título.",
-                OBSIDIAN_ANALYZE_SYSTEM,
-                ANALYZE_OPTIONS,
-                step_name="analyze",
-            )
-            parsed = _parse_analysis(raw)
-            if parsed and (attempt == 1 or _analysis_is_rich(parsed)):
-                analysis = parsed
-                break
-            if parsed and analysis is None:
-                analysis = parsed
-            logger.info("[obsidian-agent] analyze attempt %d for %s", attempt + 1, item.url)
+        raw = await _ollama_with_json_fallback(
+            analyze_prompt,
+            OBSIDIAN_ANALYZE_SYSTEM,
+            ANALYZE_OPTIONS,
+            step_name="analyze",
+        )
+        analysis = _parse_analysis(raw)
+        logger.info("[obsidian-agent] analyze for %s", item.url)
 
         if analysis and not _analysis_is_rich(analysis):
             logger.info("[obsidian-agent] enriching thin analysis from summary for %s", item.url)

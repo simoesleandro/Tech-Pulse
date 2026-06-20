@@ -18,7 +18,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip()
 
 # Task Splitting Config
-PROVIDER_SUMMARIZE = os.getenv("PROVIDER_SUMMARIZE", "ollama").strip().lower()
+PROVIDER_SUMMARIZE = os.getenv("PROVIDER_SUMMARIZE", "groq").strip().lower()
 PROVIDER_ANALYZE = os.getenv("PROVIDER_ANALYZE", "groq").strip().lower()
 PROVIDER_ORCHESTRATE = os.getenv("PROVIDER_ORCHESTRATE", "groq").strip().lower()
 

@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import re
+import time
 import unicodedata
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -28,12 +29,17 @@ logger = logging.getLogger(__name__)
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
+_rest_conn_cache: tuple[bool, str | None] | None = None
+_rest_conn_cache_ts: float = 0.0
+_REST_CONN_CACHE_TTL = 30.0
+
 
 def _reload_settings() -> None:
     load_dotenv(_BACKEND_ROOT / ".env", override=True)
 
     global OBSIDIAN_REST_URL, OBSIDIAN_REST_API_KEY, OBSIDIAN_VAULT_PATH
     global OBSIDIAN_FOLDER, OBSIDIAN_VERIFY_SSL, OBSIDIAN_OPEN_AFTER_EXPORT
+    global _rest_conn_cache, _rest_conn_cache_ts
 
     OBSIDIAN_REST_URL = os.getenv("OBSIDIAN_REST_URL", "https://127.0.0.1:27124").rstrip("/")
     OBSIDIAN_REST_API_KEY = os.getenv("OBSIDIAN_REST_API_KEY", "").strip()
@@ -41,6 +47,8 @@ def _reload_settings() -> None:
     OBSIDIAN_FOLDER = os.getenv("OBSIDIAN_FOLDER", "Tech-Pulse").strip().strip("/\\")
     OBSIDIAN_VERIFY_SSL = os.getenv("OBSIDIAN_VERIFY_SSL", "false").lower() == "true"
     OBSIDIAN_OPEN_AFTER_EXPORT = os.getenv("OBSIDIAN_OPEN_AFTER_EXPORT", "true").lower() == "true"
+    _rest_conn_cache = None
+    _rest_conn_cache_ts = 0.0
 
 
 _reload_settings()
@@ -217,8 +225,16 @@ def _vault_file_url(relative_path: str) -> str:
 
 
 def check_rest_connection() -> tuple[bool, str | None]:
+    global _rest_conn_cache, _rest_conn_cache_ts
+    now = time.monotonic()
+    if _rest_conn_cache is not None and (now - _rest_conn_cache_ts) < _REST_CONN_CACHE_TTL:
+        return _rest_conn_cache
+
     if not OBSIDIAN_REST_API_KEY:
-        return False, "OBSIDIAN_REST_API_KEY não configurada."
+        result: tuple[bool, str | None] = (False, "OBSIDIAN_REST_API_KEY não configurada.")
+        _rest_conn_cache = result
+        _rest_conn_cache_ts = now
+        return result
 
     try:
         with httpx.Client(verify=OBSIDIAN_VERIFY_SSL, timeout=5.0) as client:
@@ -227,16 +243,22 @@ def check_rest_connection() -> tuple[bool, str | None]:
                 headers={"Authorization": f"Bearer {OBSIDIAN_REST_API_KEY}"},
             )
             if response.status_code != 200:
-                return False, f"Obsidian respondeu HTTP {response.status_code}."
-            payload = response.json()
-            if payload.get("authenticated") is True:
-                return True, None
-            return False, "API key rejeitada — confira em Obsidian → Settings → Local REST API."
+                result = (False, f"Obsidian respondeu HTTP {response.status_code}.")
+            else:
+                payload = response.json()
+                if payload.get("authenticated") is True:
+                    result = (True, None)
+                else:
+                    result = (False, "API key rejeitada — confira em Obsidian → Settings → Local REST API.")
     except httpx.ConnectError:
-        return False, "Obsidian não está acessível. Abra o app e ative o plugin Local REST API."
+        result = (False, "Obsidian não está acessível. Abra o app e ative o plugin Local REST API.")
     except Exception as exc:
         logger.exception("Obsidian REST health check failed")
-        return False, str(exc)
+        result = (False, str(exc))
+
+    _rest_conn_cache = result
+    _rest_conn_cache_ts = now
+    return result
 
 
 def _write_via_rest(relative_path: str, content: str) -> None:

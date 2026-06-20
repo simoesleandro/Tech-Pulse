@@ -13,18 +13,13 @@ MAX_ITEMS_PER_FEED = 12
 
 # Curadoria: programação, web (JS/React/Node/CSS), IA/LLM e releases de linguagens.
 DEFAULT_RSS_FEEDS = {
-    # Curadoria / notícias tech
+    # Curadoria / notícias tech — alto sinal
     "tldr_tech": "https://tldr.tech/rss",
     "lobsters": "https://lobste.rs/rss",
     "github_blog": "https://github.blog/feed/",
-    "mozilla_hacks": "https://hacks.mozilla.org/feed/",
-    "smashing_magazine": "https://www.smashingmagazine.com/feed/",
-    "css_tricks": "https://css-tricks.com/category/articles/feed/",
-    "changelog": "https://changelog.com/posts/feed",
     # IA / LLM
     "simon_willison": "https://simonwillison.net/atom/everything/",
     "huggingface": "https://huggingface.co/blog/feed.xml",
-    "openai_blog": "https://openai.com/blog/rss.xml",
     # Linguagens / runtimes
     "python_insider": "https://blog.python.org/feeds/posts/default",
     "real_python": "https://realpython.com/atom.xml",
@@ -34,7 +29,6 @@ DEFAULT_RSS_FEEDS = {
     "deno_blog": "https://deno.com/feed",
     # Engenharia
     "pragmatic_engineer": "https://blog.pragmaticengineer.com/rss/",
-    "infoq": "https://feed.infoq.com/",
 }
 
 
