@@ -45,7 +45,7 @@ Os seguintes achados foram identificados no audit mas não incluídos como plano
 | [010](010-feedback-diversity.md) | Feedback Diversificado — TALVEZ + Cache por Fonte + Histórico | P2 | S | — | DONE — merged to main |
 | [011](011-digest-webhook.md) | Digest Semanal por Webhook JSON | P3 | M | — | DONE — merged to main |
 | [012](012-hype-rss-signals.md) | Hype Score para Fontes RSS — Sinais de Frequência | P3 | S | — | DONE — merged to main |
-| [013](013-semantic-search-embeddings.md) | Semantic Search via Ollama Embeddings | P3 | L | — | PENDENTE — requer `ollama pull nomic-embed-text` |
+| [013](013-semantic-search-embeddings.md) | Semantic Search via Ollama Embeddings | P3 | L | — | DONE — merged to main |
 | [014](014-personal-analytics.md) | Personal Analytics — GET /api/analytics | P3 | S | — | DONE — merged to main |
 
 ### Dependency notes — Round 2

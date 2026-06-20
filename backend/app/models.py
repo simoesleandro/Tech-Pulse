@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base, engine
@@ -47,6 +47,7 @@ class NewsItem(Base):
     )
     content_cache: Mapped[str | None] = mapped_column(String, nullable=True)
     user_relevance: Mapped[str | None] = mapped_column(String, nullable=True)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

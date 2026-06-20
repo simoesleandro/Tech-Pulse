@@ -36,7 +36,14 @@ from app.schemas import (
 from app.services.concepts import extract_feed_concepts
 from sqlalchemy import select
 
+from app.services.embeddings import embed_item, find_similar
+
 router = APIRouter(tags=["news"])
+
+
+class SimilarNewsResponse(BaseModel):
+    item: NewsItemResponse
+    similarity: float
 
 
 @router.get("/api/news/concepts", response_model=list[ObsidianConceptResponse])
@@ -383,3 +390,26 @@ def delete_news(item_id: int, db: Session = Depends(get_db)):
     db.delete(db_item)
     db.commit()
     return BulkNewsResult(affected=1)
+
+
+@router.get("/api/news/{item_id}/similar", response_model=list[SimilarNewsResponse])
+def get_similar_news(
+    item_id: int,
+    limit: int = Query(default=10, ge=1, le=50),
+    min_similarity: float = Query(default=0.7, ge=0.0, le=1.0),
+    db: Session = Depends(get_db),
+):
+    """Retorna artigos semanticamente similares. Requer Ollama rodando."""
+    item = db.get(NewsItem, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Notícia não encontrada")
+
+    # Gera embedding se ainda não tiver (lazy generation)
+    if item.embedding is None:
+        embed_item(db, item)
+
+    results = find_similar(db, item_id, limit=limit, min_similarity=min_similarity)
+    return [
+        SimilarNewsResponse(item=news_to_response(candidate), similarity=sim)
+        for candidate, sim in results
+    ]
