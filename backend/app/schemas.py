@@ -217,4 +217,33 @@ class ObsidianConceptResponse(BaseModel):
     count: int
 
 
+class SourceStats(BaseModel):
+    source: str
+    total: int
+    relevante: int
+    relevance_rate: float  # relevante / total (0.0-1.0)
+    avg_hype: float
 
+
+class IngestByDay(BaseModel):
+    date: str  # "YYYY-MM-DD"
+    total: int
+    relevante: int
+
+
+class FolderStats(BaseModel):
+    folder_id: int | None
+    folder_name: str | None
+    item_count: int
+
+
+class AnalyticsResponse(BaseModel):
+    period_days: int
+    total_items: int
+    relevant_items: int
+    read_items: int
+    bookmarked_items: int
+    feedback_given: int
+    sources: list[SourceStats]
+    ingest_by_day: list[IngestByDay]
+    top_folders: list[FolderStats]
