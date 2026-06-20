@@ -217,4 +217,19 @@ class ObsidianConceptResponse(BaseModel):
     count: int
 
 
+class ScraperHealthResponse(BaseModel):
+    source: str
+    last_run_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_items_found: int = 0
+    last_error: str | None = None
+    status: str  # "ok" | "error" | "never_run"
+
+
+class SystemHealthResponse(BaseModel):
+    scrapers: list[ScraperHealthResponse]
+    total_items: int
+    relevant_items: int
+
+
 
