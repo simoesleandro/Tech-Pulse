@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 
 from app.lifespan import app_lifespan
-from app.routes import backfill, digest, feed, health, ingest, news, obsidian, settings
+from app.routes import analytics, backfill, digest, feed, health, ingest, news, obsidian, settings
 
-__all__ = ["health", "news", "ingest", "obsidian", "settings", "backfill", "feed", "digest"]
+__all__ = ["health", "news", "ingest", "obsidian", "settings", "backfill", "feed", "digest", "analytics"]
 
 
 def register_routes(app: FastAPI) -> None:
@@ -15,3 +15,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(backfill.router)
     app.include_router(feed.router)
     app.include_router(digest.router)
+    app.include_router(analytics.router)
