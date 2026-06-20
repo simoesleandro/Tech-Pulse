@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 
 from app.schemas import AppSettings
@@ -18,6 +19,9 @@ DEFAULT_SETTINGS: dict = AppSettings(
     },
 ).model_dump()
 
+_settings_lock = threading.Lock()
+_settings_cache: dict | None = None
+
 
 def _merge_with_defaults(data: dict) -> dict:
     merged = {**DEFAULT_SETTINGS, **data}
@@ -31,19 +35,32 @@ def _merge_with_defaults(data: dict) -> dict:
 
 
 def load_settings() -> dict:
+    global _settings_cache
+    with _settings_lock:
+        if _settings_cache is not None:
+            return dict(_settings_cache)
     if not SETTINGS_FILE.exists():
         save_settings(DEFAULT_SETTINGS)
-        return DEFAULT_SETTINGS.copy()
+        result = DEFAULT_SETTINGS.copy()
+        with _settings_lock:
+            _settings_cache = result
+        return dict(result)
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)
         merged = _merge_with_defaults(raw if isinstance(raw, dict) else {})
-        return AppSettings.model_validate(merged).model_dump()
+        result = AppSettings.model_validate(merged).model_dump()
     except Exception:
-        return AppSettings.model_validate(DEFAULT_SETTINGS).model_dump()
+        result = AppSettings.model_validate(DEFAULT_SETTINGS).model_dump()
+    with _settings_lock:
+        _settings_cache = result
+    return dict(result)
 
 
 def save_settings(settings: dict) -> None:
+    global _settings_cache
     validated = AppSettings.model_validate(_merge_with_defaults(settings)).model_dump()
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(validated, f, indent=2, ensure_ascii=False)
+    with _settings_lock:
+        _settings_cache = None

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -401,19 +402,20 @@ async def agente_unificado(article: RawArticle) -> EnrichedArticle:
     )
 
 
-AgentProgressCallback = Callable[[str, str, str | None], None]
-
 # Module-level cache of user feedback examples used for few-shot prompting.
+_feedback_lock = threading.Lock()
 _feedback_examples: list[dict] = []
 
 
 def update_feedback_cache(examples: list[dict]) -> None:
     global _feedback_examples
-    _feedback_examples = examples[-20:]
+    with _feedback_lock:
+        _feedback_examples = list(examples[-20:])
 
 
 def _format_feedback_shots() -> str:
-    examples = _feedback_examples
+    with _feedback_lock:
+        examples = list(_feedback_examples)  # snapshot; release lock before iteration
     if not examples:
         return ""
     lines = ["Calibração com feedback do usuário (priorize esses padrões):"]
