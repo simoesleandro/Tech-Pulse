@@ -63,6 +63,22 @@ class NewsItem(Base):
     )
 
 
+class ScraperRun(Base):
+    __tablename__ = "scraper_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items_found: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    __table_args__ = (
+        Index("idx_scraper_runs_source", "source"),
+        Index("idx_scraper_runs_started", "started_at"),
+    )
+
+
 def migrate_sqlite_schema() -> None:
     with engine.connect() as conn:
         tables = conn.execute(

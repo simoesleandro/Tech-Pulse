@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import NewsItem
@@ -32,6 +32,7 @@ def news_to_response(item: NewsItem) -> NewsItemResponse:
 
 def apply_news_filters(
     query,
+    db: Session,
     *,
     is_read: bool | None,
     is_bookmarked: bool | None,
@@ -68,20 +69,28 @@ def apply_news_filters(
     elif obsidian_exported is False:
         query = query.where(NewsItem.obsidian_exported_at.is_(None))
     if q:
-        pattern = f"%{q.strip()}%"
-        query = query.where(
-            or_(
-                NewsItem.title.ilike(pattern),
-                NewsItem.title_original.ilike(pattern),
-                NewsItem.description.ilike(pattern),
-            )
-        )
+        # FTS5 match — retorna apenas IDs que satisfazem a busca
+        fts_query = q.strip().replace('"', '""')  # escapa aspas duplas para FTS5
+        fts_ids = [
+            row[0]
+            for row in db.execute(
+                text(
+                    "SELECT rowid FROM news_fts WHERE news_fts MATCH :q ORDER BY rank"
+                ),
+                {"q": fts_query},
+            ).fetchall()
+        ]
+        if fts_ids:
+            query = query.where(NewsItem.id.in_(fts_ids))
+        else:
+            # Nenhum resultado FTS — retornar zero resultados
+            query = query.where(NewsItem.id.is_(None))
     return query
 
 
 def count_news_filtered(db: Session, **filters) -> int:
     query = select(func.count()).select_from(NewsItem)
-    query = apply_news_filters(query, **filters)
+    query = apply_news_filters(query, db, **filters)
     return db.scalar(query) or 0
 
 
@@ -93,10 +102,10 @@ def list_news_filtered(
     **filters,
 ) -> tuple[list[NewsItem], int]:
     base = select(NewsItem).options(joinedload(NewsItem.folder))
-    base = apply_news_filters(base, **filters)
+    base = apply_news_filters(base, db, **filters)
 
     count_query = select(func.count()).select_from(NewsItem)
-    count_query = apply_news_filters(count_query, **filters)
+    count_query = apply_news_filters(count_query, db, **filters)
     total = db.scalar(count_query) or 0
 
     items = db.scalars(

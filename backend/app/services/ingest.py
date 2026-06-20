@@ -5,6 +5,7 @@ import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import func, or_, select
@@ -172,9 +173,39 @@ FETCHER_LABELS: dict[str, str] = {
 }
 
 
+def _record_scraper_run(
+    db: Session,
+    *,
+    source: str,
+    started_at: datetime,
+    finished_at: datetime,
+    items_found: int,
+    error: str | None,
+) -> None:
+    from app.models import ScraperRun
+    from app.database import SessionLocal
+    try:
+        own_db = SessionLocal()
+        try:
+            run = ScraperRun(
+                source=source,
+                started_at=started_at,
+                finished_at=finished_at,
+                items_found=items_found,
+                error=error,
+            )
+            own_db.add(run)
+            own_db.commit()
+        finally:
+            own_db.close()
+    except Exception as exc:
+        logger.warning("Failed to record scraper run: %s", exc)
+
+
 def _fetch_all_articles(
     fetchers: list[Fetcher],
     on_progress: ProgressEmitter | None = None,
+    db: Session | None = None,
 ) -> tuple[list[RawArticle], list[str]]:
     articles: list[RawArticle] = []
     errors: list[str] = []
@@ -186,19 +217,28 @@ def _fetch_all_articles(
         name = _fetcher_name(fetcher)
         label = FETCHER_LABELS.get(name, name)
         emit_step(on_progress, "fetch", "active", f"Buscando {label}…")
+        started_at = datetime.now(timezone.utc)
         try:
             batch = fetcher()
+            finished_at = datetime.now(timezone.utc)
             emit_step(
                 on_progress,
                 "fetch",
                 "active",
                 f"{label}: {len(batch)} artigo(s)",
             )
+            if db is not None:
+                _record_scraper_run(db, source=label, started_at=started_at,
+                                    finished_at=finished_at, items_found=len(batch), error=None)
             return batch, None
         except Exception as exc:
+            finished_at = datetime.now(timezone.utc)
             message = f"{label}: {exc}"
             logger.warning("Scraper failed %s", message)
             emit_step(on_progress, "fetch", "active", f"{label}: falhou")
+            if db is not None:
+                _record_scraper_run(db, source=label, started_at=started_at,
+                                    finished_at=finished_at, items_found=0, error=str(exc)[:500])
             return [], message
 
     max_workers = min(len(fetchers), 5)
@@ -635,7 +675,7 @@ def run_ingest(
 
     job.emit_step(on_progress, "fetch", "active", "Iniciando busca nas fontes…")
     existing_urls = _load_existing_urls(db)
-    articles, scraper_errors = _fetch_all_articles(fetchers, on_progress)
+    articles, scraper_errors = _fetch_all_articles(fetchers, on_progress, db=db)
     job.emit_step(on_progress, "fetch", "done", f"{len(articles)} artigos capturados")
 
     job.emit_step(on_progress, "dedup", "active", "Removendo duplicatas…")
