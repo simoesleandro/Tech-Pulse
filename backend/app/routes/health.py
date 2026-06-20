@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps.pipeline_lock import active_pipeline_job, pipeline_job_in_progress
+from app.deps.pipeline_lock import active_pipeline_job, end_pipeline_job, pipeline_job_in_progress
 from app.models import NewsItem, ScraperRun
 from app.schemas import (
     HealthResponse,
@@ -47,6 +47,13 @@ def get_pipeline_steps():
 def get_pipeline_status():
     job = active_pipeline_job()
     return PipelineStatusResponse(busy=pipeline_job_in_progress(), active_job=job)
+
+
+@router.post("/api/pipeline/reset", response_model=PipelineStatusResponse)
+def reset_pipeline_lock():
+    """Força liberação do lock de pipeline quando um job travar sem liberar."""
+    end_pipeline_job()
+    return PipelineStatusResponse(busy=False, active_job=None)
 
 
 _ALL_SOURCES = ["dev.to", "Reddit", "GitHub Trends", "Hacker News", "RSS"]

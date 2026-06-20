@@ -20,6 +20,7 @@ import {
   syncObsidianBackfill,
   generateObsidianDigest,
   fetchNews,
+  resetPipelineLock,
 } from "@/lib/api";
 import {
   applyPipelineStepEvent,
@@ -381,6 +382,19 @@ export function SystemPanel({
                 Exportar pendentes
               </button>
             )}
+            {pipelineBlocked ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  await resetPipelineLock();
+                  router.refresh();
+                }}
+                className="btn-interactive rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wide text-amber-300 hover:bg-amber-500/20"
+                title="Pipeline travado? Clique para forçar desbloqueio"
+              >
+                Desbloquear pipeline
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={isBusy}

@@ -280,6 +280,13 @@ export async function fetchPipelineStatus(): Promise<PipelineStatus> {
   });
 }
 
+export async function resetPipelineLock(): Promise<PipelineStatus> {
+  return apiJson<PipelineStatus>("/api/pipeline/reset", {
+    method: "POST",
+    timeoutMs: 5_000,
+  });
+}
+
 export async function triggerIngest(): Promise<IngestResult> {
   return apiJson<IngestResult>("/api/ingest", {
     method: "POST",
