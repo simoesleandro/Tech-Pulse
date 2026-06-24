@@ -4,8 +4,11 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/*.py[cod]
 backend/.pytest_cache/
+backend/.coverage
 backend/techpulse.db
 backend/*.db
+backend/*.db-shm
+backend/*.db-wal
 
 # Node
 frontend/node_modules/

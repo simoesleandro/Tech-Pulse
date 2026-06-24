@@ -1,6 +1,5 @@
 <div align="center">
 
-<!-- Adicione docs/screenshot.png após capturar o dashboard -->
 <img src="docs/screenshot.png" alt="TechPulse screenshot" width="100%">
 <br/>
 
@@ -65,7 +64,7 @@ TechPulse reduces information overload for software engineers by consolidating t
 
 | Dashboard | System Design |
 |-----------|---------------|
-| Adicione `docs/screenshot-dashboard.png` | Veja [`system_design.html`](system_design.html) |
+| ![TechPulse dashboard](docs/screenshot.png) | Veja [`system_design.html`](system_design.html) |
 
 </details>
 
@@ -95,7 +94,7 @@ TechPulse reduces information overload for software engineers by consolidating t
 | Banco de dados / Database | SQLite |
 | IA / AI | Gemma4 local via Ollama (opcional Groq) |
 | Deploy | Local (dev) |
-| Testes / Tests | `pytest` em `backend/tests/` + build Next.js no CI |
+| Testes / Tests | `pytest` em `backend/tests/` + build Next.js |
 
 ---
 
@@ -303,7 +302,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-> **80+ cenários** cobrindo health, CRUD, filtros, Obsidian, ingest e agentes.
+> **161 testes backend** cobrindo health, CRUD, filtros, Obsidian, ingest e agentes.
 
 ---
 
@@ -318,7 +317,7 @@ npm run test:e2e
 - [x] Painel Sistema (backfill Obsidian/re-enrich com SSE)
 - [x] Filtros hype mínimo e status Obsidian
 - [x] Drawer de detalhe + triagem rápida + digest semanal
-- [ ] Screenshots in README (`docs/screenshot.png`)
+- [x] Screenshots in README (`docs/screenshot.png`)
 - [ ] Production deploy (Fly.io / Vercel + VPS)
 - [x] Docker Compose local (API + frontend)
 - [x] Atualizações otimistas no feed (sem reload completo)

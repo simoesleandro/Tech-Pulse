@@ -1,7 +1,4 @@
 """Testes para o serviço de analytics."""
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
 from app.schemas import AnalyticsResponse, SourceStats
 
@@ -35,28 +32,22 @@ def test_source_stats_relevance_rate():
     assert stats.relevance_rate == 0.4
 
 
-def test_get_analytics_returns_response():
+def test_get_analytics_returns_response(db_session):
     """get_analytics retorna AnalyticsResponse mesmo com banco vazio."""
-    from app.database import SessionLocal
     from app.services.analytics import get_analytics
-    db = SessionLocal()
-    try:
-        result = get_analytics(db, days=7)
-        assert isinstance(result, AnalyticsResponse)
-        assert result.period_days == 7
-        assert result.total_items >= 0
-    finally:
-        db.close()
+
+    result = get_analytics(db_session, days=7)
+
+    assert isinstance(result, AnalyticsResponse)
+    assert result.period_days == 7
+    assert result.total_items >= 0
 
 
-def test_get_analytics_sources_ordered_by_total():
+def test_get_analytics_sources_ordered_by_total(db_session):
     """Fontes são ordenadas por total decrescente."""
-    from app.database import SessionLocal
     from app.services.analytics import get_analytics
-    db = SessionLocal()
-    try:
-        result = get_analytics(db, days=365)
-        if len(result.sources) > 1:
-            assert result.sources[0].total >= result.sources[1].total
-    finally:
-        db.close()
+
+    result = get_analytics(db_session, days=365)
+
+    if len(result.sources) > 1:
+        assert result.sources[0].total >= result.sources[1].total
